@@ -72,7 +72,7 @@
 <section id="s-joined">
   <div class="card">
     <div class="k">You're in</div>
-    <div class="v"><span id="v-verified" class="tag ok">verified</span> <span id="v-agent"></span></div>
+    <div class="v"><span id="v-verified" class="tag sandbox">not verified yet</span> <span id="v-agent"></span></div>
     <div class="k" style="margin-top:10px">Latest offer</div>
     <div class="v" id="v-offer">waiting for the vendor…</div>
   </div>
@@ -130,8 +130,12 @@ const send = (coalition_id, agent_id, type, body) =>
 
 // ---- the secret half: price and salt live here and nowhere else -------------
 const KEY = (cid) => "open-union/" + cid;
+const CURRENT = "open-union/current";
 const loadSecret = (cid) => { try { return JSON.parse(localStorage.getItem(KEY(cid)) || "null"); } catch (e) { return null; } };
-const saveSecret = (cid, s) => localStorage.setItem(KEY(cid), JSON.stringify(s));
+const saveSecret = (cid, s) => {
+  localStorage.setItem(KEY(cid), JSON.stringify(s));
+  localStorage.setItem(CURRENT, cid);  // the hosted flow sends the phone back here, maybe into a stale coalition
+};
 
 async function sealPrice(priceCents) {
   const salt = crypto.getRandomValues(new Uint8Array(32));
@@ -156,26 +160,47 @@ $("go").addEventListener("click", async () => {
   try {
     const match = await api("/coalitions/match", { method: "POST", headers: { "Content-Type": "application/json" },
                                                    body: JSON.stringify({ need }) });
-    let cid = match.coalition_id;
-    if (match.status === "ask_user" || !cid) {
-      cid = FALLBACK_COALITION;
-      logLine("no clear match; joining " + cid);
-    } else {
-      logLine(match.status + " coalition " + cid + " (" + (match.member_count ?? 0) + " members)");
+    if (!match.coalition_id) {
+      // ask_user: the relay is unsure, so the choice is the person's, not this page's.
+      askUser(need, price);
+      return;
     }
-    const sealed = await sealPrice(Math.round(price * 100));
-    member = { coalition_id: cid, agent_id: "anon-" + hex(crypto.getRandomValues(new Uint8Array(5))),
-               ...sealed, inquiry_id: null, verified: false, joined: false, revealed: false };
-    persist();
-    logLine("sealed your limit in this browser; commitment " + member.commitment.slice(0, 16) + "…");
-    await send(cid, member.agent_id, "INTENT", { need });
-    showVerifyStep();
+    logLine(match.status + " coalition " + match.coalition_id + " (" + (match.member_count ?? 0) + " members)");
+    await startMember(match.coalition_id, need, price);
   } catch (e) {
     showError(e.message);
   } finally {
     $("go").disabled = false;
   }
 });
+
+async function startMember(cid, need, price) {
+  const sealed = await sealPrice(Math.round(price * 100));
+  member = { coalition_id: cid, agent_id: "anon-" + hex(crypto.getRandomValues(new Uint8Array(5))),
+             ...sealed, inquiry_id: null, mode: null, verified: false, joined: false, revealed: false };
+  persist();
+  logLine("sealed your limit in this browser; commitment " + member.commitment.slice(0, 16) + "…");
+  await send(cid, member.agent_id, "INTENT", { need });
+  showVerifyStep();
+}
+
+function askUser(need, price) {
+  // The relay could not tell whether this need belongs in an existing coalition.
+  const box = document.createElement("div");
+  box.className = "note";
+  box.innerHTML = "We can't tell which coalition fits <b>" + esc(need) + "</b>. "
+    + "Rewrite your sentence, or join <b>" + esc(FALLBACK_COALITION) + "</b> anyway.";
+  const join = document.createElement("button");
+  join.className = "secondary";
+  join.textContent = "Join " + FALLBACK_COALITION + " anyway";
+  join.addEventListener("click", () => {
+    logLine("no clear match; you chose to join " + FALLBACK_COALITION);
+    startMember(FALLBACK_COALITION, need, price).catch((e) => showError(e.message));
+  });
+  logLine("no clear match: asking you which coalition to join");
+  $("err").innerHTML = "";
+  $("err").append(box, join);
+}
 
 // ---- step 2: Persona --------------------------------------------------------
 async function showVerifyStep() {
@@ -190,7 +215,11 @@ async function showVerifyStep() {
   }
   const actions = $("verify-actions");
   actions.innerHTML = "";
-  if (cfg.mode === "live" && cfg.template_id) {
+  if (cfg.mode === "live" && !cfg.template_id) {
+    return showError("Persona is configured on the relay but PERSONA_TEMPLATE_ID is missing, "
+      + "so verification can't start. The sandbox stub is not offered while a key is set.");
+  }
+  if (cfg.mode === "live") {
     const button = document.createElement("button");
     button.textContent = "Verify I'm a unique human";
     button.addEventListener("click", () => {
@@ -219,6 +248,7 @@ async function showVerifyStep() {
 
 // ---- step 3: JOIN + COMMIT, then the callback marks the member verified -----
 async function joinAndCommit(inquiryId) {
+  $("err").innerHTML = "";
   try {
     member.inquiry_id = inquiryId || null;
     if (!member.joined) {
@@ -229,24 +259,41 @@ async function joinAndCommit(inquiryId) {
       persist();
       logLine("JOIN and COMMIT sent; the relay has the hash, not the price");
     }
+    $("v-agent").textContent = member.agent_id;
     const check = await api("/persona/callback", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id,
                              inquiry_id: member.inquiry_id }) });
     member.verified = !!check.verified;
+    member.mode = check.mode;
     persist();
     logLine("persona check: " + check.status + " (" + check.mode + ") → verified=" + check.verified);
-    $("v-agent").textContent = member.agent_id;
     const badge = $("v-verified");
     badge.textContent = check.mode === "sandbox-stub" ? "verified · sandbox stub" : "verified";
     badge.className = "tag " + (check.mode === "sandbox-stub" ? "sandbox" : "ok");
-    if (!check.verified) { badge.textContent = "not verified: " + check.status; badge.className = "tag sandbox"; }
+    if (!check.verified) {
+      badge.textContent = "not verified: " + check.status;
+      badge.className = "tag sandbox";
+      offerRetry(check.reason ? check.reason + "." : "Persona reports the inquiry as " + check.status + ".");
+    }
     show("s-joined");
     listen();
     poll();
   } catch (e) {
     showError(e.message);
+    if (member.joined) { show("s-joined"); offerRetry("The verification check did not complete."); }
   }
+}
+
+function offerRetry(why) {
+  // JOIN and COMMIT already stand; only the inquiry failed, so the member can run it again.
+  const note = document.createElement("div");
+  note.className = "note";
+  note.textContent = why + " You're in the coalition but you don't count toward the price until an inquiry passes.";
+  const again = document.createElement("button");
+  again.textContent = "Try verification again";
+  again.addEventListener("click", () => { $("err").innerHTML = ""; showVerifyStep(); });
+  $("err").append(note, again);
 }
 
 // ---- step 4: offers, then REVEAL at close -----------------------------------
@@ -275,11 +322,11 @@ async function poll() {
 }
 
 async function reveal() {
-  member.revealed = true;
-  persist();
   logLine("coalition is closing: revealing price and salt now, for the first time");
   await send(member.coalition_id, member.agent_id, "REVEAL",
              { price_cents: member.price_cents, salt_hex: member.salt_hex });
+  member.revealed = true;  // only after the relay has it, so a failed send stays retryable
+  persist();
   const offers = (await api("/log?coalition_id=" + encodeURIComponent(member.coalition_id)))
     .filter((row) => row.type === "OFFER");
   const final = offers.length ? offers[offers.length - 1].body : lastOffer;
@@ -301,7 +348,7 @@ async function reveal() {
 // ---- resume: back from the Persona hosted flow, or a reloaded phone ---------
 (function resume() {
   const inquiryId = params.get("inquiry-id") || params.get("inquiry_id");
-  const candidate = loadSecret(FALLBACK_COALITION) || Object.keys(localStorage)
+  const candidate = loadSecret(localStorage.getItem(CURRENT) || FALLBACK_COALITION) || Object.keys(localStorage)
     .filter((k) => k.startsWith("open-union/"))
     .map((k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } })
     .filter(Boolean)
@@ -313,7 +360,11 @@ async function reveal() {
   if (member.joined) {
     $("v-agent").textContent = member.agent_id;
     const badge = $("v-verified");
-    if (!member.verified) { badge.textContent = "not verified yet"; badge.className = "tag sandbox"; }
+    if (!member.verified) {
+      badge.textContent = "not verified yet";
+      badge.className = "tag sandbox";
+      offerRetry("This member hasn't passed a Persona inquiry yet.");
+    } else if (member.mode === "sandbox-stub") { badge.textContent = "verified · sandbox stub"; badge.className = "tag sandbox"; }
     show("s-joined");
     listen();
     poll();

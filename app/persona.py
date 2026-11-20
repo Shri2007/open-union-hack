@@ -31,7 +31,6 @@ class CallbackIn(BaseModel):
     coalition_id: str | None = Field(default=None, max_length=36)
     agent_id: str | None = Field(default=None, max_length=64)
     inquiry_id: str | None = Field(default=None, max_length=128)
-    status: str | None = Field(default=None, max_length=64)
     model_config = {"extra": "allow"}
 
 
@@ -68,8 +67,12 @@ def _reference(body: CallbackIn) -> tuple[str | None, str | None]:
     return body.coalition_id, body.agent_id
 
 
-def fetch_inquiry_status(inquiry_id: str) -> str:
-    """Ask Persona for the inquiry's current status. Tests replace this function with a fake."""
+def fetch_inquiry(inquiry_id: str) -> tuple[str, str | None]:
+    """Ask Persona for the inquiry's status and the member it was opened for.
+
+    Tests replace this function with a fake. Both values come from Persona, never from the caller:
+    a browser or an unsigned webhook can claim anything.
+    """
     try:
         response = httpx.get(
             f"{PERSONA_API}/{inquiry_id}",
@@ -79,7 +82,9 @@ def fetch_inquiry_status(inquiry_id: str) -> str:
             timeout=TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        return str(response.json()["data"]["attributes"]["status"]).lower()
+        attributes = response.json()["data"]["attributes"]
+        reference = attributes.get("reference-id") or attributes.get("reference_id")
+        return str(attributes["status"]).lower(), reference
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(502, f"Persona inquiry lookup failed: {type(exc).__name__}") from exc
 
@@ -107,25 +112,28 @@ def persona_callback(body: CallbackIn) -> dict:
         raise HTTPException(403, "Only current members can be verified. Send JOIN first.")
 
     mode = _mode()
+    reason = None
     if mode == STUB_MODE:
         # No Persona key on this relay: label the stub everywhere it shows up.
-        status, inquiry_id = STUB_MODE, inquiry_id or STUB_MODE
+        status, inquiry_id, verified = STUB_MODE, inquiry_id or STUB_MODE, True
     else:
-        status = (body.status or _dig(body.model_extra or {}, "status") or "").lower()
-        if status not in PASSED_STATUSES:
-            if not inquiry_id:
-                raise HTTPException(422, "inquiry_id is required when Persona is configured.")
-            status = fetch_inquiry_status(str(inquiry_id))
+        # Live: the status and the member the inquiry belongs to both come from Persona itself,
+        # so a claimed status, or someone else's passed inquiry, can't buy a place in the headcount.
+        if not inquiry_id:
+            raise HTTPException(422, "inquiry_id is required when Persona is configured.")
+        status, reference = fetch_inquiry(str(inquiry_id))
+        verified = status in PASSED_STATUSES and reference == f"{cid}:{agent_id}"
+        if status in PASSED_STATUSES and not verified:
+            reason = "inquiry belongs to another member"
 
-    verified = mode == STUB_MODE or status in PASSED_STATUSES
     if verified:
         store.set_verified(cid, agent_id, True)
     relay.record_system(cid, "persona_check", agent_id=agent_id, inquiry_id=inquiry_id,
-                        status=status, mode=mode, verified=verified)
+                        status=status, mode=mode, verified=verified, reason=reason)
     label = " (sandbox stub, not a real identity check)" if mode == STUB_MODE else ""
     bus.publish(cid, "chat", {"who": "persona",
                               "text": (f"{agent_id} is a verified unique human{label}." if verified
-                                       else f"{agent_id} is not verified: inquiry {status}.")})
+                                       else f"{agent_id} is not verified: {reason or 'inquiry ' + status}.")})
     log.info("persona check mode=%s verified=%s agent=%s", mode, verified, agent_id)
     return {"coalition_id": cid, "agent_id": agent_id, "inquiry_id": inquiry_id,
-            "status": status, "mode": mode, "verified": verified}
+            "status": status, "mode": mode, "verified": verified, "reason": reason}
