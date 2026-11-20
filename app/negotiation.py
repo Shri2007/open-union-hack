@@ -32,8 +32,11 @@ WALKOUT_DISCOUNT_CENTS = 200
 _concessions: dict[str, int] = {}  # coalition_id -> cents off the curve won by a walkout
 
 
+_remembered: dict[str, int] = {}  # coalition_id -> cents off the curve from Cognee vendor memory (simulated)
+
+
 def quote(cid: str, n: int) -> int:
-    return max(3800, price_for(n) - _concessions.get(cid, 0))
+    return max(3800, price_for(n) - _concessions.get(cid, 0) - _remembered.get(cid, 0))
 _running = threading.Lock()
 
 TRAP_TERMS = ("$58/month for the first 3 months (introductory rate), then $95/month standard rate. "
@@ -110,6 +113,30 @@ def _script(*args: str) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, *args], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# ---------- Cognee vendor memory (simulated; off unless COGNEE_MEMORY=1, never raises) ----------
+def _recall_memory(cid: str) -> None:
+    try:
+        from app import memory
+        c = _s().get_coalition(cid)
+        got = memory.recall_walkout(c["need"]) if c else None
+        if got:
+            _remembered[cid] = WALKOUT_DISCOUNT_CENTS
+            chat(cid, "vendor", f"Northline remembers (simulated memory, Cognee): {got['text']} "
+                                f"I'll open {dollars(WALKOUT_DISCOUNT_CENTS)} under the usual curve this time.")
+    except Exception as exc:
+        print(f"memory recall skipped: {exc!r}", file=sys.stderr)
+
+
+def _remember_close(cid: str, price_cents: int) -> None:
+    try:
+        from app import memory
+        c = _s().get_coalition(cid)
+        if c and memory.enabled():  # cognify is slow: store in the background
+            threading.Thread(target=memory.remember_walkout, args=(c["need"], price_cents), daemon=True).start()
+    except Exception as exc:
+        print(f"memory store skipped: {exc!r}", file=sys.stderr)
+
+
 # ---------- beats ----------
 def beat1(cid: str) -> None:
     chat(cid, "system", "Beat 1 · One agent asks alone.")
@@ -122,6 +149,7 @@ def beat1(cid: str) -> None:
 
 def beat2(cid: str) -> None:
     chat(cid, "system", "Beat 2 · The room joins. Simulated members are seeded alongside real ones.")
+    _recall_memory(cid)
     have = _s().counts(cid)["simulated"]
     proc = _script("scripts/seed_members.py", "--relay", RELAY_URL, "--coalition", cid,
                    "--n", str(max(0, SEED_TARGET - have))) if have < SEED_TARGET else None
@@ -218,6 +246,7 @@ def beat6(cid: str) -> None:
                   mismatched=t["mismatched"], not_revealed=t["not_revealed"])
     bus.publish(cid, "tally", {"accepted": t["accepted"], "total": t["total"], "revealed": t["revealed"]})
     s.set_state(cid, "closed")
+    _remember_close(cid, price)
     chat(cid, "system", f"{t['accepted']} of {t['total']} members accept {dollars(price)}. "
                         f"Each saves {dollars(8500 - price)} a month. Check it yourself at /verify.html.")
 
@@ -274,6 +303,7 @@ def reset(c: str = DEMO_COALITION_ID, hard: int = 0):
         s.create_coalition(DEMO_COALITION_NEED if c == DEMO_COALITION_ID else c, c)
     s.reset(c, hard=bool(hard))
     _concessions.pop(c, None)
+    _remembered.pop(c, None)
     secrets = ROOT / "members_secrets.json"
     if secrets.exists():
         secrets.unlink()  # simulated members' secrets are stale once they're removed
