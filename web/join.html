@@ -11,12 +11,12 @@
   .top { max-width: 520px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 16px) 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .wordmark { font-weight: 800; letter-spacing: .16em; text-transform: uppercase; font-size: .82rem; }
   .steps { max-width: 520px; margin: 18px auto 0; padding: 0 16px; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .steps li { display: flex; gap: 8px; align-items: baseline; border-top: 3px solid rgba(255,255,255,.38); padding-top: 8px; font-size: .78rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; transition: border-color .2s; }
+  .steps li { display: flex; gap: 8px; align-items: baseline; border-top: 3px solid rgba(255,255,255,.38); padding-top: 8px; font-size: .88rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; transition: border-color .2s; }
   .steps li b { font-weight: 800; }
   .steps li.done, .steps li.current { border-color: var(--white); font-weight: 700; }
   main { max-width: 520px; margin: 0 auto; padding: 22px 16px 56px; }
   h1 { font-size: 2rem; }
-  p.lead { margin: 10px 0 0; max-width: 56ch; font-size: 1.02rem; }
+  p.lead { margin: 10px 0 0; max-width: 56ch; font-size: 1.1rem; font-weight: 500; }
   body[data-step]:not([data-step="s-need"]) p.lead { display: none; }
   .demo-note { margin-top: 16px; }
   section { display: none; margin-top: 18px; }
@@ -59,9 +59,10 @@
   details.activity { margin-top: 24px; }
   details.activity summary { cursor: pointer; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: 14px 0; }
   details.activity summary:focus-visible { outline: 3px solid var(--white); outline-offset: 2px; }
-  #log { list-style: none; margin: 6px 0 0; padding: 0; font: .78rem/1.4 var(--mono); }
+  #log { list-style: none; margin: 6px 0 0; padding: 4px 12px; font: .8rem/1.4 var(--mono); background: rgba(26,26,46,.3); border-radius: 10px; }
+  #log:empty { display: none; }
   #log li { padding: 5px 0; border-top: 1px solid rgba(255,255,255,.28); overflow-wrap: anywhere; }
-  footer { margin-top: 22px; font-size: .85rem; max-width: 60ch; }
+  footer { margin-top: 22px; font-size: .88rem; max-width: 60ch; background: rgba(26,26,46,.3); padding: 12px 14px; border-radius: 10px; }
   @media (min-width: 720px) { h1 { font-size: 2.3rem; } main { padding-top: 34px; } }
 </style>
 </head>
@@ -123,7 +124,7 @@
   </div>
   <div class="card card--deep">
     <div class="orbit-art"></div>
-    <div class="label muted">Latest offer</div>
+    <div class="label muted">Latest offer · simulated vendor</div>
     <div class="v" id="v-offer">waiting for the vendor…</div>
   </div>
   <p class="note" id="wait-note">Keep this page open. When the coalition closes, this phone reveals your price and re-checks the deal.</p>
@@ -310,7 +311,7 @@ async function showVerifyStep() {
     warn.innerHTML = '<span class="tag sandbox">sandbox</span> No Persona key on this relay, so identity is not really checked. This path is a stub for the demo.';
     const button = document.createElement("button");
     button.className = "stub";
-    button.textContent = "Sandbox stub: verified";
+    button.textContent = "Continue with sandbox stub";
     button.addEventListener("click", () => {
       logLine("sandbox stub: marking verified without a real Persona inquiry");
       joinAndCommit("sandbox-stub-" + hex(crypto.getRandomValues(new Uint8Array(4))));
