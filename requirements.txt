@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+singlestoredb
+httpx
+openai
+anthropic
+mcp
+pytest
