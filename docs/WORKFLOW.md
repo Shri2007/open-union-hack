@@ -58,8 +58,9 @@ Who does what, when. Prompts are in `docs/PROMPTS.md`, the spec is `docs/CONTRAC
 |---|---|
 | `app/main.py`, `app/config.py`, `app/db.py`, `app/relay.py`, `app/protocol.py`, `tests/test_protocol.py` | You (P0, P1) |
 | `app/vendor.py`, `app/negotiation.py` | You (P4) |
-| `scripts/probe_apis.py`, `docs/API_NOTES.md` | Codex (PA) |
-| `app/offer_check.py` | Codex (P5) |
+| `scripts/probe_apis.py`, `docs/API_NOTES.md` | Ali (PA) |
+| `app/offer_check.py` | Ali (P5) |
+| `web/vendor.html` (Scam the Union console) | Ali |
 | `firedrill/`, `scripts/drill.py` | Codex (P10) |
 | `web/stage.html` | Capy P2, then Capy P11 |
 | `scripts/seed_members.py`, `scripts/sybil_attack.py` | Capy P6 |
