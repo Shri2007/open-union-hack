@@ -17,7 +17,7 @@ from app import store as store_module
 router = APIRouter()
 log = logging.getLogger("open_union.persona")
 
-PERSONA_API = "https://api.withpersona.com/api/v1/inquiries"
+PERSONA_API = "https://withpersona.com/api/v1/inquiries"
 PERSONA_VERSION = "2023-01-05"
 HOSTED_FLOW_URL = "https://withpersona.com/verify"
 TIMEOUT_SECONDS = 15.0
@@ -82,6 +82,44 @@ def fetch_inquiry_status(inquiry_id: str) -> str:
         return str(response.json()["data"]["attributes"]["status"]).lower()
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(502, f"Persona inquiry lookup failed: {type(exc).__name__}") from exc
+
+
+class StartIn(BaseModel):
+    coalition_id: str = Field(max_length=36)
+    agent_id: str = Field(max_length=64)
+
+
+def _persona_headers() -> dict:
+    return {"Authorization": f"Bearer {config.PERSONA_API_KEY}", "Persona-Version": PERSONA_VERSION,
+            "Key-Inflection": "camel", "Content-Type": "application/json"}
+
+
+@router.post("/persona/start")
+def persona_start(body: StartIn) -> dict:
+    """Create the inquiry server-side and return a one-time hosted link.
+
+    This sidesteps the hosted flow's template, environment and redirect-domain settings: the link already
+    points at the right sandbox inquiry, and the person comes back to the join page themselves.
+    """
+    if _mode() != LIVE_MODE or not config.PERSONA_TEMPLATE_ID:
+        raise HTTPException(409, "Persona isn't configured on this relay. Use the sandbox stub.")
+    try:
+        created = httpx.post(PERSONA_API, headers=_persona_headers(), timeout=TIMEOUT_SECONDS, json={
+            "data": {"attributes": {"inquiryTemplateId": config.PERSONA_TEMPLATE_ID,
+                                    "referenceId": f"{body.coalition_id}:{body.agent_id}"}}})
+        created.raise_for_status()
+        inquiry_id = created.json()["data"]["id"]
+        link = httpx.post(f"{PERSONA_API}/{inquiry_id}/generate-one-time-link", headers=_persona_headers(),
+                          timeout=TIMEOUT_SECONDS, json={})
+        link.raise_for_status()
+        meta = link.json().get("meta") or {}
+        url = meta.get("oneTimeLink") or meta.get("one-time-link")
+        if not url:
+            raise KeyError("oneTimeLink")
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(502, f"Persona could not start an inquiry: {type(exc).__name__}") from exc
+    log.info("persona inquiry started agent=%s", body.agent_id)
+    return {"inquiry_id": inquiry_id, "url": url}
 
 
 @router.get("/persona/callback")

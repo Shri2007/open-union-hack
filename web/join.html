@@ -193,15 +193,28 @@ async function showVerifyStep() {
   if (cfg.mode === "live" && cfg.template_id) {
     const button = document.createElement("button");
     button.textContent = "Verify I'm a unique human";
-    button.addEventListener("click", () => {
-      const url = new URL(cfg.hosted_flow_url);
-      url.searchParams.set("inquiry-template-id", cfg.template_id);
-      url.searchParams.set("reference-id", member.coalition_id + ":" + member.agent_id);
-      url.searchParams.set("redirect-uri", location.origin + location.pathname + location.search);
-      logLine("opening the Persona hosted flow");
-      location.href = url.toString();
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "Opening Persona…";
+      try {
+        // The relay creates the inquiry and hands back a one-time Persona link for it.
+        const started = await api("/persona/start", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id }) });
+        member.inquiry_id = started.inquiry_id;
+        persist();
+        logLine("opening Persona (sandbox). When it says you're done, come back to this tab.");
+        location.href = started.url;
+      } catch (e) {
+        button.disabled = false;
+        button.textContent = "Verify I'm a unique human";
+        showError("Persona didn't start: " + e.message);
+      }
     });
-    actions.append(button);
+    const hint = document.createElement("p");
+    hint.className = "note";
+    hint.textContent = "Persona opens in this tab. When it says you're done, come back here and you'll be marked verified.";
+    actions.append(button, hint);
   } else {
     const warn = document.createElement("p");
     warn.className = "note";
@@ -244,6 +257,29 @@ async function joinAndCommit(inquiryId) {
     show("s-joined");
     listen();
     poll();
+    // Persona can take a few seconds to mark an inquiry completed. Re-check for up to a minute.
+    if (!check.verified && check.mode === "live" && member.inquiry_id && !joinAndCommit.retrying) {
+      joinAndCommit.retrying = true;
+      let tries = 0;
+      const timer = setInterval(async () => {
+        tries += 1;
+        try {
+          const again = await api("/persona/callback", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id,
+                                   inquiry_id: member.inquiry_id }) });
+          if (again.verified) {
+            clearInterval(timer);
+            member.verified = true;
+            persist();
+            badge.textContent = "verified";
+            badge.className = "tag ok";
+            logLine("persona check: " + again.status + " → verified");
+          }
+        } catch (e) { /* keep trying */ }
+        if (tries >= 15) clearInterval(timer);
+      }, 4000);
+    }
   } catch (e) {
     showError(e.message);
   }
@@ -298,6 +334,9 @@ async function reveal() {
   }
 }
 
+// Safari restores this page from its back-forward cache without running scripts again, so reload it.
+window.addEventListener("pageshow", (e) => { if (e.persisted) location.reload(); });
+
 // ---- resume: back from the Persona hosted flow, or a reloaded phone ---------
 (function resume() {
   const inquiryId = params.get("inquiry-id") || params.get("inquiry_id");
@@ -309,7 +348,9 @@ async function reveal() {
   if (!candidate) return;
   member = candidate;
   logLine("resumed your sealed limit from this browser (" + member.coalition_id + ")");
-  if (inquiryId) { joinAndCommit(inquiryId); return; }
+  // Back from Persona: the inquiry id comes from the URL, or from what we saved before leaving.
+  const pending = inquiryId || (!member.verified && member.inquiry_id);
+  if (pending) { joinAndCommit(pending); return; }
   if (member.joined) {
     $("v-agent").textContent = member.agent_id;
     const badge = $("v-verified");
