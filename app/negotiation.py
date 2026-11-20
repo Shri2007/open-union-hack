@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from app import bus
 from app import store as store_module
@@ -324,6 +325,40 @@ def run_beat(n: int, c: str = DEMO_COALITION_ID):
     return {"started": n, "coalition_id": c, "queued_behind": ahead}
 
 
+# --- strike vote: the room decides to walk out --------------------------------------------------------
+_strike_votes: dict[str, set[str]] = {}  # coalition_id -> real members who voted to strike this run
+
+
+class VoteIn(BaseModel):
+    coalition_id: str
+    agent_id: str
+
+
+def _votes_needed(cid: str) -> int:
+    real = _s().counts(cid)["real"]
+    return max(1, math.ceil(real * 0.4))  # 40% of the real people in the room
+
+
+@router.post("/vote/strike")
+def vote_strike(body: VoteIn):
+    """A real member votes to walk out. When 40% of real members have voted, the walkout fires."""
+    s = _s()
+    member = s.get_member(body.coalition_id, body.agent_id)
+    if not member or member["removed_reason"] or member["client"] not in ("web", "mcp"):
+        raise HTTPException(403, "Only real members of this coalition can vote.")
+    votes = _strike_votes.setdefault(body.coalition_id, set())
+    votes.add(body.agent_id)
+    needed = _votes_needed(body.coalition_id)
+    bus.publish(body.coalition_id, "strike_votes", {"votes": len(votes), "needed": needed})
+    fired = len(votes) >= needed
+    if fired:
+        record_system(body.coalition_id, "strike_vote", votes=len(votes), needed=needed)
+        chat(body.coalition_id, "system", f"The room voted to strike: {len(votes)} of {needed} needed.")
+        votes.clear()
+        _queue_for(body.coalition_id).put(7)
+    return {"votes": len(votes) if not fired else needed, "needed": needed, "fired": fired}
+
+
 @router.post("/demo/reset")
 def reset(c: str = DEMO_COALITION_ID, hard: int = 0):
     s = _s()
@@ -331,6 +366,7 @@ def reset(c: str = DEMO_COALITION_ID, hard: int = 0):
         s.create_coalition(DEMO_COALITION_NEED if c == DEMO_COALITION_ID else c, c)
     s.reset(c, hard=bool(hard))
     _concessions.pop(c, None)
+    _strike_votes.pop(c, None)
     _remembered.pop(c, None)
     secrets = ROOT / "members_secrets.json"
     if secrets.exists():

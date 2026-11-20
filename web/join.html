@@ -85,6 +85,11 @@
   #log li { padding: 5px 0; border-top: 1px solid rgba(255,255,255,.28); overflow-wrap: anywhere; }
   footer { margin-top: 22px; font-size: .88rem; max-width: 60ch; background: rgba(26,26,46,.3); padding: 12px 14px; border-radius: 10px; }
   @media (min-width: 720px) { h1 { font-size: 2.3rem; } main { padding-top: 34px; } }
+  .strike-vote { margin-top: 26px; font: 800 1.5rem/1 inherit; font-family: inherit; color: #b3261e; background: #fff;
+    border: 0; border-radius: 999px; padding: 18px 30px; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+  .strike-vote[hidden], .strike-tally[hidden] { display: none; }
+  .strike-vote:disabled { opacity: .7; }
+  .strike-tally { margin-top: 12px; font-weight: 700; font-size: 1.1rem; }
 </style>
 </head>
 <body>
@@ -185,6 +190,8 @@
     <p class="room-title"><span id="room-speaker"></span><strong id="room-title"></strong></p>
     <p class="room-detail" id="room-detail"></p>
   </div>
+  <button type="button" class="strike-vote" id="strike-vote" hidden>✊ Vote to strike</button>
+  <p class="strike-tally" id="strike-tally" hidden></p>
 </div>
 
 <script>
@@ -435,11 +442,35 @@ function setRoom(view, speaker = "", title = "", detail = "") {
 function showOffer() {
   if (!lastOffer) return setRoom("");
   const price = dollars(lastOffer.price_cents);
-  if (lastOffer.price_cents <= member.price_cents) {
+  const above = lastOffer.price_cents > member.price_cents;
+  if (!above) {
     setRoom("accept", "Your agent:", "ACCEPT " + price);
   } else {
     setRoom("decline", "Your agent:", "NO, " + price, "is above your limit");
   }
+  // While the price is above your limit, you can vote for the coalition to walk out.
+  $("strike-vote").hidden = !above;
+  $("strike-vote").disabled = votedOffer === lastOffer.offer_id;
+  $("strike-vote").textContent = votedOffer === lastOffer.offer_id ? "✊ Vote counted" : "✊ Vote to strike";
+}
+
+let votedOffer = null;
+$("strike-vote").addEventListener("click", async () => {
+  if (!lastOffer) return;
+  votedOffer = lastOffer.offer_id;
+  $("strike-vote").disabled = true;
+  $("strike-vote").textContent = "✊ Vote counted";
+  try {
+    const r = await api("/vote/strike", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id }) });
+    showStrikeTally(r.votes, r.needed);
+  } catch (e) { logLine("strike vote failed: " + e.message); }
+});
+
+function showStrikeTally(votes, needed) {
+  const el = $("strike-tally");
+  el.hidden = false;
+  el.textContent = `${votes} of ${needed} votes to strike`;
 }
 
 let lastStrikeId = null;
@@ -479,6 +510,7 @@ function listen() {
     onStrike(s.text);
   });
   stream.addEventListener("tally", (ev) => { tally = JSON.parse(ev.data); });
+  stream.addEventListener("strike_votes", (ev) => { const v = JSON.parse(ev.data); showStrikeTally(v.votes, v.needed); });
 }
 
 // Polling backs up the live stream (a phone network or tunnel can stall it), and never stops,

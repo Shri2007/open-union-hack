@@ -603,6 +603,11 @@ handlers.strike = (d) => {
   flash("strike", 5000);
   setMood("panic", 9000);
 };
+// Audience strike vote from the phones: show the count climbing under the vendor, and make him sweat.
+handlers.strike_votes = (d) => {
+  if (!vendor.moodUntil) setMood("nervous");
+  $("vendor-mood").textContent = `mood: ${vendor.mood} · ✊ ${d.votes} of ${d.needed} votes to strike`;
+};
 handlers.tally = (d) => {
   baseHandlers.tally(d);
   setMood("defeated", 600000);
