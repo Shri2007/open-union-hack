@@ -48,3 +48,11 @@ Only sections marked VERIFIED come from a real call that succeeded. No keys or d
 - TypeSafe accepts several Nouls in ONE request (three keys under `questions`), and `state` can hold a list such as `plan_terms: [chunk_text, ...]`. Model `jev-latest` worked.
 - Senso `/org/search/context` with `max_results: 3` returns up to 3 chunks per query; the same `content_id` can appear more than once (different chunks of one document).
 - Trap offer ("$58/mo for 3 months, then $95, 24-month contract") came back p = 0.98 / 0.71 / 0.96, so `reject`. Clean offer ("$58/mo fixed 12 months, no added fees") came back p = 0.02 / 0.03 / 0.01, so `pass`.
+
+## Persona sandbox: VERIFIED by a real call (2026-11-20)
+
+- Create: `POST https://api.withpersona.com/api/v1/inquiries`, `Authorization: Bearer $PERSONA_API_KEY`. Body `{"data":{"attributes":{"inquiry-template-id":"<itmpl_...>","reference-id":"<coalition_id>:<agent_id>"}},"meta":{"auto-create-one-time-link":true}}` returns 201 with `data.id` (`inq_...`) and `meta["one-time-link"]` (the link the person opens).
+- Retrieve: `GET /api/v1/inquiries/{id}` returns `data.attributes.status` (`created` until the person finishes) and `data.attributes["reference-id"]`.
+- Sandbox only: `POST /api/v1/inquiries/{id}/approve` with `{}` returned 200 and moved the status to `approved`. Handy for testing without a camera. Sandbox does no real identity check, and the logs and chat say so.
+- Our rule (`app/persona.py`): verified only if Persona itself reports `completed` or `approved`, the reference-id matches that member, and no other member already used the inquiry.
+- Env vars: `PERSONA_API_KEY` (starts `persona_sandbox_`) and `PERSONA_TEMPLATE_ID` (starts `itmpl_`). Both are needed for `config.INTEGRATIONS["persona"]` to turn on.
