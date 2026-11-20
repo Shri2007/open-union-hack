@@ -226,7 +226,13 @@ async function showVerifyStep() {
       const url = new URL(cfg.hosted_flow_url);
       url.searchParams.set("inquiry-template-id", cfg.template_id);
       url.searchParams.set("reference-id", member.coalition_id + ":" + member.agent_id);
-      url.searchParams.set("redirect-uri", location.origin + location.pathname + location.search);
+      // Strip any inquiry id we came back with: a retry must not send Persona a URL that already
+      // carries the old one, or the return would hold two and this page would read the stale one.
+      const back = new URLSearchParams(location.search);
+      back.delete("inquiry-id");
+      back.delete("inquiry_id");
+      const query = back.toString();
+      url.searchParams.set("redirect-uri", location.origin + location.pathname + (query ? "?" + query : ""));
       logLine("opening the Persona hosted flow");
       location.href = url.toString();
     });
@@ -364,7 +370,10 @@ async function reveal() {
       badge.textContent = "not verified yet";
       badge.className = "tag sandbox";
       offerRetry("This member hasn't passed a Persona inquiry yet.");
-    } else if (member.mode === "sandbox-stub") { badge.textContent = "verified · sandbox stub"; badge.className = "tag sandbox"; }
+    } else {
+      badge.textContent = member.mode === "sandbox-stub" ? "verified · sandbox stub" : "verified";
+      badge.className = "tag " + (member.mode === "sandbox-stub" ? "sandbox" : "ok");
+    }
     show("s-joined");
     listen();
     poll();
