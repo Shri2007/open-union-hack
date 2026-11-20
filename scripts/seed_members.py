@@ -130,17 +130,21 @@ async def seed(args) -> int:
 
 
 def split_failures(members: list, results: list) -> tuple[int, str]:
-    """Count failures, keeping members whose seeding never confirmed out of the failure count.
+    """Count failures, apart from members the relay rejects because their seeding never landed.
 
-    They are still tried: a COMMIT whose response was lost did reach the relay.
+    Unconfirmed members are still tried, since a COMMIT whose response was lost did reach
+    the relay. Only the relay's own 403 for a non-member is excused; every other error,
+    transport or HTTP, stays a failure.
     """
     failed = unconfirmed = 0
     for m, r in zip(members, results):
-        if isinstance(r, Exception):
-            if m.get("seeded", True):
-                failed += 1
-            else:
-                unconfirmed += 1
+        if not isinstance(r, Exception):
+            continue
+        not_a_member = isinstance(r, httpx.HTTPStatusError) and r.response.status_code == 403
+        if not_a_member and not m.get("seeded", True):
+            unconfirmed += 1
+        else:
+            failed += 1
     return failed, f", {unconfirmed} never seeded" if unconfirmed else ""
 
 
