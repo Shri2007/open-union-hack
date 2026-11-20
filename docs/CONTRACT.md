@@ -10,6 +10,14 @@ Personal agents (from any vendor) find others who need the same thing, form a co
 
 `open` → `closing` → `closed`. REVEAL is accepted only in `closing`. The tally is final at `closed`.
 
+## Fixed names
+
+- Demo coalition id: `demo-phone-plan` (need: "phone plan under $60"). Created on server startup.
+- Vendor messages use `agent_id: "vendor"`. Relay entries use `agent_id: "system"`.
+- Real members are clients `web` and `mcp`. Simulated: `firedrill`, `simulated-attack`.
+- With env `SIMULATED_VERIFIED=1`, JOINs from client `firedrill` are marked verified (labeled simulated).
+- Shared helpers for builders: `app.store.store` (database), `app.bus.publish(cid, event, data)` (live events), `app.relay.record_system(...)` (audit entries).
+
 ## Message envelope
 
 Every message is one row in the public, append-only log.
@@ -31,6 +39,7 @@ Every message is one row in the public, append-only log.
 | `OFFER` | vendor agent | `{ price_cents: int, terms_text: str, senso_content_ids: [str], trap_checks: [{q: str, p: float}] }` |
 | `RESPOND` | member agent | `{ offer_id: str, accept: bool }`: decided in the member's own code by comparing the offer to its own sealed price |
 | `REVEAL` | member agent, in `closing` only | `{ price_cents: int, salt_hex: str }` |
+| `SYSTEM` | the relay itself (`agent_id: "system"`) | `{ kind: str, ... }`: judgments and checks for the audit trail, e.g. `reveal_check`, TypeSafe answers, Senso citations. Write them with `app.relay.record_system(cid, kind, **data)`. |
 
 ## Relay API
 
@@ -39,6 +48,7 @@ Every message is one row in the public, append-only log.
 | POST | `/coalitions/match` | `{ need }` → `{ status: "joined" or "created" or "ask_user", coalition_id?, member_count? }` |
 | POST | `/messages` | Validates and appends any protocol message, then publishes SSE events |
 | GET | `/log?coalition_id=` | The full ordered public log |
+| GET | `/coalitions/{id}` | `{ id, need, state, counts: { verified, unverified, removed, real, simulated } }` |
 | GET | `/stream?coalition_id=` | Server-Sent Events for screens |
 | POST | `/demo/beat/{n}` | Presenter trigger for demo beats 1–6 |
 | POST | `/demo/reset` | Clears simulated members, offers, chat and tally. Keeps real members (`web`, `mcp`). `?hard=1` wipes everything. |

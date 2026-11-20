@@ -1,4 +1,6 @@
 """SingleStore connection and tables. The log table is the public, append-only record."""
+import threading
+
 import singlestoredb
 
 from app import config
@@ -39,10 +41,31 @@ TABLES = [
 ]
 
 
+_local = threading.local()
+
+
 def connect():
     if not config.SINGLESTORE_URL:
         raise RuntimeError("SINGLESTORE_URL is not set")
     return singlestoredb.connect(config.SINGLESTORE_URL, autocommit=True)
+
+
+def shared():
+    """One reused connection per thread. Opening a fresh one costs seconds on the shared tier."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _local.conn = connect()
+    return conn
+
+
+def reset_shared() -> None:
+    conn = getattr(_local, "conn", None)
+    _local.conn = None
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def create_tables() -> None:

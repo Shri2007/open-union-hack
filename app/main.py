@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app import config, db
+from app.protocol import DEMO_COALITION_ID, DEMO_COALITION_NEED
 from app.relay import router as relay_router
+from app.store import store
 
 log = logging.getLogger("open_union")
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -23,7 +25,8 @@ async def lifespan(app: FastAPI):
     log.info("integrations off: %s", ", ".join(off) or "none")
     try:
         db.create_tables()
-        log.info("database tables ready")
+        store.create_coalition(DEMO_COALITION_NEED, DEMO_COALITION_ID)
+        log.info("database tables ready, demo coalition %s", DEMO_COALITION_ID)
     except Exception as exc:  # keep serving so /health can report the problem
         log.error("database setup failed: %s", type(exc).__name__)
     yield
