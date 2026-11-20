@@ -50,7 +50,7 @@ Every message is one row in the public, append-only log.
 | GET | `/log?coalition_id=` | The full ordered public log |
 | GET | `/coalitions/{id}` | `{ id, need, state, counts: { verified, unverified, removed, real, simulated } }` |
 | GET | `/stream?coalition_id=` | Server-Sent Events for screens |
-| POST | `/demo/beat/{n}` | Presenter trigger for demo beats 1–6 |
+| POST | `/demo/beat/{n}` | Presenter trigger for demo beats 1–6, and 7 = walkout |
 | POST | `/demo/reset` | Clears simulated members, offers, chat and tally. Keeps real members (`web`, `mcp`). `?hard=1` wipes everything. |
 | POST | `/persona/callback` | Marks a member verified once its Persona inquiry passed |
 
@@ -63,6 +63,7 @@ offer           { offer_id, price_cents, terms_text }
 trap_check      { questions: [{q, p}], verdict: "reject" | "pass" | "ask_member", senso: [{content_id, version_id, score}] }
 chat            { who: "coalition" | "vendor" | "persona" | "system", text }
 tally           { accepted, total, revealed: [{agent_id, price_cents, ok}] }
+strike          { text, members }   # walkout (beat 7): member phones show a strike screen
 ```
 
 ## Rules enforced in code, never by a model

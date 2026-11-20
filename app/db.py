@@ -1,5 +1,8 @@
 """SingleStore connection and tables. The log table is the public, append-only record."""
+import os
+import queue
 import threading
+from contextlib import contextmanager
 
 import singlestoredb
 
@@ -42,31 +45,40 @@ TABLES = [
 ]
 
 
-_local = threading.local()
-
-
 def connect():
     if not config.SINGLESTORE_URL:
         raise RuntimeError("SINGLESTORE_URL is not set")
     return singlestoredb.connect(config.SINGLESTORE_URL, autocommit=True)
 
 
-def shared():
-    """One reused connection per thread. Opening a fresh one costs seconds on the shared tier."""
-    conn = getattr(_local, "conn", None)
-    if conn is None:
-        conn = _local.conn = connect()
-    return conn
+# A small capped pool. The shared tier allows 100 connections per user across every machine using
+# this database, so the relay never holds more than POOL_SIZE however many threads are busy.
+POOL_SIZE = int(os.environ.get("DB_POOL_SIZE", "8"))
+_idle: "queue.LifoQueue" = queue.LifoQueue()
+_slots = threading.BoundedSemaphore(POOL_SIZE)
 
 
-def reset_shared() -> None:
-    conn = getattr(_local, "conn", None)
-    _local.conn = None
-    if conn is not None:
+@contextmanager
+def pooled():
+    """Borrow a connection; return it on success, discard it on error."""
+    if not _slots.acquire(timeout=30):
+        raise RuntimeError("database pool exhausted")
+    conn = None
+    try:
         try:
-            conn.close()
-        except Exception:
-            pass
+            conn = _idle.get_nowait()
+        except queue.Empty:
+            conn = connect()
+        yield conn
+        _idle.put(conn)
+        conn = None
+    finally:
+        if conn is not None:  # an error happened while borrowed: don't reuse a possibly broken connection
+            try:
+                conn.close()
+            except Exception:
+                pass
+        _slots.release()
 
 
 def create_tables() -> None:
@@ -82,7 +94,7 @@ def create_tables() -> None:
 
 def ping() -> bool:
     try:
-        with connect() as conn, conn.cursor() as cur:
+        with pooled() as conn, conn.cursor() as cur:
             cur.execute("SELECT 1")
             return cur.fetchone()[0] == 1
     except Exception:
