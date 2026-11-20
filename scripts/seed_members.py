@@ -64,6 +64,15 @@ async def post_message(client: httpx.AsyncClient, relay: str, coalition: str,
     return r.json()
 
 
+async def coalition_counts(client: httpx.AsyncClient, relay: str, coalition: str) -> dict | None:
+    try:
+        r = await client.get(f"{relay.rstrip('/')}/coalitions/{coalition}")
+        r.raise_for_status()
+        return r.json().get("counts")
+    except Exception:
+        return None
+
+
 async def run_capped(jobs) -> list:
     """Run coroutine factories with at most CONCURRENCY in flight."""
     sem = asyncio.Semaphore(CONCURRENCY)
@@ -86,6 +95,12 @@ async def seed(args) -> int:
         "persona_inquiry_id": f"sandbox-sim-{i + 1}",
     } for i in range(args.n)]
 
+    # Saved before anything is sent: a member whose COMMIT lands but whose response is lost
+    # still needs its salt, and the relay refuses a second commitment.
+    store = load_secrets(args.secrets)
+    store.setdefault(args.coalition, []).extend(members)
+    save_secrets(args.secrets, store)
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         async def send(m):
             await post_message(client, args.relay, args.coalition, m["agent_id"], "INTENT", {"need": args.need})
@@ -96,18 +111,16 @@ async def seed(args) -> int:
             return m["agent_id"]
 
         results = await run_capped([lambda m=m: send(m) for m in members])
+        counts = await coalition_counts(client, args.relay, args.coalition)
 
-    seeded = [m for m, r in zip(members, results) if not isinstance(r, Exception)]
-    failed = len(members) - len(seeded)
+    failed = sum(1 for r in results if isinstance(r, Exception))
 
-    store = load_secrets(args.secrets)
-    store.setdefault(args.coalition, []).extend(seeded)
-    save_secrets(args.secrets, store)
-
-    verified_note = "verified" if os.environ.get("SIMULATED_VERIFIED") == "1" else "unverified"
-    print(f"simulated (firedrill): seeded {len(seeded)}/{args.n} members, {failed} failed, "
+    # Verification is the relay's call (SIMULATED_VERIFIED on the server), so read it back.
+    counts_note = (f"relay counts {counts['verified']} verified / {counts['unverified']} unverified"
+                   if counts else "relay decides verification; its counts were unreadable")
+    print(f"simulated (firedrill): seeded {args.n - failed}/{args.n} members, {failed} failed, "
           f"prices {PRICE_MIN_CENTS}-{PRICE_MAX_CENTS} cents sealed in {args.secrets}, "
-          f"relay marks them {verified_note}")
+          f"{counts_note}")
     return 1 if failed else 0
 
 
