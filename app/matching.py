@@ -57,6 +57,8 @@ def ask_typesafe(state: dict) -> float:
 def match(body: MatchIn) -> dict:
     store = store_module.store
     need = body.need.strip()
+    if not need:
+        raise HTTPException(422, "need must not be blank")
 
     best_id, best_p = None, 0.0
     for candidate in store.list_coalitions(MAX_CANDIDATES):

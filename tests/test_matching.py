@@ -120,3 +120,10 @@ def test_a_missing_key_is_an_error(client, monkeypatch, fake):
     r = post(client, "cheaper mobile plan, under $55")
     assert r.status_code == 503
     assert len(fake.coalitions) == 2
+
+
+def test_a_blank_need_is_refused(client, monkeypatch, fake):
+    fake_typesafe(monkeypatch, {})
+    r = post(client, "   ")
+    assert r.status_code == 422
+    assert len(fake.coalitions) == 2  # no empty coalition written
