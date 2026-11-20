@@ -694,7 +694,8 @@ function takeSlot() {
 function addDot(kind, verified, agentId, pulse) {
   const slot = takeSlot();
   if (slot < 0) return null;  // at the cap: the counts keep counting, the floor stops filling
-  const dot = { slot, x: 0, y: 0, kind, verified, agentId: agentId || null, known: !!agentId,
+  const dot = { slot, x: 0, y: 0, kind, verified, agentId: agentId || null,
+    joinedUnverified: !!agentId && !verified,
     pulseAt: pulse && !REDUCED ? performance.now() : 0, doomed: false, dissolveAt: 0 };
   placeDot(dot);
   floor.dots.push(dot);
@@ -729,31 +730,45 @@ function removeDot(agentId) {
 // first, since that is who beat 3 adds without a Persona inquiry.
 function reconcileFloor() {
   const c = state.counts;
-  // A dot that came from a member_joined event knows its own client and Persona state. The counts
-  // only say how many of each kind exist, so they fill in the members we never saw join and never
-  // overrule an event: a real member still waiting on Persona stays a red real dot even while the
-  // simulated crowd around it is verified.
-  const known = { "real:1": 0, "real:0": 0, "sim:1": 0, "sim:0": 0 };
-  const filler = { "real:1": [], "real:0": [], "sim:1": [], "sim:0": [] };
-  for (const dot of floor.dots) {
-    if (dot.doomed) continue;
-    const key = `${dot.kind}:${dot.verified ? 1 : 0}`;
-    if (dot.known) known[key]++; else filler[key].push(dot);
+  const real = Math.min(c.real, FLOOR_CAP);
+  const sim = Math.min(c.simulated, Math.max(0, FLOOR_CAP - real));
+  const live = { real: [], sim: [] };
+  for (const dot of floor.dots) if (!dot.doomed) live[dot.kind].push(dot);
+
+  // How many of each kind there are is the counts' call, so a member who joined before this page
+  // loaded gets a dot and /demo/reset takes the simulated crowd away again, event or no event.
+  // Which kind a dot is stays the join event's call, because a client never changes.
+  for (const kind of ["real", "sim"]) {
+    const want = kind === "real" ? real : sim;
+    while (live[kind].length > want) dropDot(live[kind].pop());
+    for (let i = live[kind].length; i < want; i++) {
+      const dot = addDot(kind, true, null, false);
+      if (!dot) break;
+      live[kind].push(dot);
+    }
   }
-  const real = Math.max(0, Math.min(c.real, FLOOR_CAP) - known["real:1"] - known["real:0"]);
-  const sim = Math.max(0, Math.min(c.simulated, Math.max(0, FLOOR_CAP - c.real)) - known["sim:1"] - known["sim:0"]);
-  const unverified = Math.max(0, c.unverified - known["real:0"] - known["sim:0"]);
-  const simUnverified = Math.min(unverified, sim);
-  const realUnverified = Math.min(real, unverified - simUnverified);
-  const want = {
-    "real:1": real - realUnverified, "real:0": realUnverified,
-    "sim:1": sim - simUnverified, "sim:0": simUnverified
-  };
-  for (const key of Object.keys(want)) {
-    const [kind, verified] = key.split(":");
-    for (let i = filler[key].length; i < want[key]; i++) addDot(kind, verified === "1", null, false);
-    for (let i = filler[key].length; i > want[key]; i--) dropDot(filler[key].pop());
+
+  // Verification follows the counts too: Persona passes a member long after it joined, and the
+  // relay reports that only in the counts. A dot whose own JOIN said unverified goes red first,
+  // then the simulated crowd, so beat 3's attackers are the red ones and a real member still
+  // waiting on Persona stays red while the verified crowd around it does not.
+  for (const dot of live.real) dot.verified = true;
+  for (const dot of live.sim) dot.verified = true;
+  let left = Math.min(c.unverified, live.real.length + live.sim.length);
+  const pending = left ? [...live.sim, ...live.real].filter((d) => d.joinedUnverified) : [];
+  for (const queue of [pending, live.sim, live.real]) {
+    for (const dot of queue) {
+      if (left <= 0) break;
+      if (!dot.verified) continue;
+      dot.verified = false;
+      left--;
+    }
   }
+  // Once the counts say a member passed, its JOIN stops being evidence of an outstanding check,
+  // so the hint retires. Otherwise the member who passed first would keep taking the red dot from
+  // the one who is actually still waiting.
+  for (const dot of live.sim) if (dot.verified) dot.joinedUnverified = false;
+  for (const dot of live.real) if (dot.verified) dot.joinedUnverified = false;
 }
 
 function drawFloor(now) {
