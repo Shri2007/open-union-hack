@@ -1,152 +1,131 @@
-"""Persona identity check (P7 backend). Only members whose Persona inquiry passed count toward the headcount.
+"""Persona verification: only a verified unique human counts toward the headcount (docs/CONTRACT.md).
 
-Flow: POST /persona/start (creates an inquiry, returns its hosted link) -> the person verifies on Persona ->
-the page sends JOIN with the inquiry id -> POST /persona/callback re-checks the inquiry with Persona itself
-(never trusting the browser) and marks the member verified.
-
-Persona sandbox does not do real identity checks, and every log line says which environment it came from.
-If Persona isn't configured, /persona/stub gives a clearly labeled stub so the demo still runs.
+The join page opens Persona's hosted flow with PERSONA_TEMPLATE_ID and then posts here; Persona's own
+webhook can post here too. Either way a member is marked verified only when its inquiry is completed
+or approved. With no PERSONA_API_KEY the relay runs a clearly labeled sandbox stub instead.
 """
+import logging
+from typing import Any
+
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app import bus, config
-from app import relay
+from app import bus, config, relay
 from app import store as store_module
 
 router = APIRouter()
+log = logging.getLogger("open_union.persona")
 
-API = "https://api.withpersona.com/api/v1"
-HOSTED_FLOW = "https://inquiry.withpersona.com/verify"
-PASSED = {"completed", "approved"}  # Persona statuses that count as passed
-
-
-class PersonaError(Exception):
-    """Persona is unreachable, rejected our key, or isn't configured. Never treated as verified."""
-
-
-def configured() -> bool:
-    return bool(config.PERSONA_API_KEY and config.PERSONA_TEMPLATE_ID)
-
-
-def environment() -> str:
-    key = config.PERSONA_API_KEY
-    if key.startswith("persona_sandbox"):
-        return "sandbox"
-    if key.startswith("persona_production"):
-        return "production"
-    return "unknown"
-
-
-def _require_config() -> None:
-    missing = [n for n, v in (("PERSONA_API_KEY", config.PERSONA_API_KEY),
-                              ("PERSONA_TEMPLATE_ID", config.PERSONA_TEMPLATE_ID)) if not v]
-    if missing:
-        raise PersonaError(f"{' and '.join(missing)} missing: Persona is not configured")
-
-
-def _call(method: str, path: str, **kw) -> dict:
-    try:
-        r = httpx.request(method, API + path, timeout=30,
-                          headers={"Authorization": f"Bearer {config.PERSONA_API_KEY}"}, **kw)
-    except httpx.HTTPError as exc:
-        raise PersonaError(f"Persona request failed: {type(exc).__name__}")
-    if r.status_code == 401:
-        raise PersonaError("Persona rejected PERSONA_API_KEY (HTTP 401)")
-    if r.status_code not in (200, 201):
-        raise PersonaError(f"Persona returned HTTP {r.status_code}")
-    return r.json()
-
-
-def create_inquiry(coalition_id: str, agent_id: str) -> dict:
-    """Returns {inquiry_id, url}. reference-id binds the inquiry to this one member."""
-    _require_config()
-    tmpl = config.PERSONA_TEMPLATE_ID
-    attr = "inquiry-template-id" if tmpl.startswith("itmpl_") else "template-id"
-    data = _call("POST", "/inquiries", json={
-        "data": {"attributes": {attr: tmpl, "reference-id": f"{coalition_id}:{agent_id}"}},
-        "meta": {"auto-create-one-time-link": True},
-    })
-    inquiry_id = data["data"]["id"]
-    url = (data.get("meta") or {}).get("one-time-link") or f"{HOSTED_FLOW}?inquiry-id={inquiry_id}"
-    return {"inquiry_id": inquiry_id, "url": url}
-
-
-def get_inquiry(inquiry_id: str) -> dict:
-    """Returns {status, reference_id} as Persona reports them."""
-    _require_config()
-    attrs = _call("GET", f"/inquiries/{inquiry_id}")["data"].get("attributes", {})
-    return {"status": attrs.get("status"), "reference_id": attrs.get("reference-id")}
-
-
-class StartIn(BaseModel):
-    coalition_id: str
-    agent_id: str
+PERSONA_API = "https://api.withpersona.com/api/v1/inquiries"
+PERSONA_VERSION = "2023-01-05"
+HOSTED_FLOW_URL = "https://withpersona.com/verify"
+TIMEOUT_SECONDS = 15.0
+PASSED_STATUSES = ("completed", "approved")
+STUB_MODE = "sandbox-stub"
+LIVE_MODE = "live"
 
 
 class CallbackIn(BaseModel):
-    coalition_id: str
-    agent_id: str
-    inquiry_id: str
+    """Our join page's shape. A Persona webhook posts its own JSON, parsed out of `extra`."""
+    coalition_id: str | None = Field(default=None, max_length=36)
+    agent_id: str | None = Field(default=None, max_length=64)
+    inquiry_id: str | None = Field(default=None, max_length=128)
+    status: str | None = Field(default=None, max_length=64)
+    model_config = {"extra": "allow"}
 
 
-def _member_or_404(coalition_id: str, agent_id: str) -> dict:
-    member = store_module.store.get_member(coalition_id, agent_id)
-    if not member or member["removed_reason"]:
-        raise HTTPException(404, "Unknown member. Send JOIN first.")
-    return member
+def _mode() -> str:
+    return LIVE_MODE if config.PERSONA_API_KEY else STUB_MODE
 
 
-def _mark_verified(cid: str, agent_id: str, text: str, **log) -> None:
-    store_module.store.set_verified(cid, agent_id, True)
-    relay.record_system(cid, "persona_check", agent_id=agent_id, passed=True, **log)
-    bus.publish(cid, "chat", {"who": "persona", "text": text})
+def _dig(value: Any, *keys: str) -> Any:
+    """First value found under any of `keys`, at any depth of a webhook payload."""
+    if isinstance(value, dict):
+        for key in keys:
+            if value.get(key) is not None and not isinstance(value.get(key), (dict, list)):
+                return value[key]
+        for nested in value.values():
+            found = _dig(nested, *keys)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for nested in value:
+            found = _dig(nested, *keys)
+            if found is not None:
+                return found
+    return None
 
 
-@router.post("/persona/start")
-def start(body: StartIn):
-    if not store_module.store.get_coalition(body.coalition_id):
-        raise HTTPException(404, f"Unknown coalition {body.coalition_id}")
+def _reference(body: CallbackIn) -> tuple[str | None, str | None]:
+    """coalition_id and agent_id, from our own fields or from the inquiry's reference-id."""
+    if body.coalition_id and body.agent_id:
+        return body.coalition_id, body.agent_id
+    raw = _dig(body.model_extra or {}, "reference-id", "reference_id", "referenceId")
+    if isinstance(raw, str) and ":" in raw:
+        cid, _, agent = raw.partition(":")
+        return cid or None, agent or None
+    return body.coalition_id, body.agent_id
+
+
+def fetch_inquiry_status(inquiry_id: str) -> str:
+    """Ask Persona for the inquiry's current status. Tests replace this function with a fake."""
     try:
-        out = create_inquiry(body.coalition_id, body.agent_id)
-    except PersonaError as exc:
-        raise HTTPException(503, str(exc))
-    return {**out, "environment": environment()}
+        response = httpx.get(
+            f"{PERSONA_API}/{inquiry_id}",
+            headers={"Authorization": f"Bearer {config.PERSONA_API_KEY}",
+                     "Persona-Version": PERSONA_VERSION,
+                     "Key-Inflection": "kebab"},
+            timeout=TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        return str(response.json()["data"]["attributes"]["status"]).lower()
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(502, f"Persona inquiry lookup failed: {type(exc).__name__}") from exc
+
+
+@router.get("/persona/callback")
+def persona_config() -> dict:
+    """What the join page needs to start verification: live hosted flow, or the sandbox stub."""
+    return {"mode": _mode(),
+            "template_id": config.PERSONA_TEMPLATE_ID or None,
+            "hosted_flow_url": HOSTED_FLOW_URL}
 
 
 @router.post("/persona/callback")
-def callback(body: CallbackIn):
-    cid, agent = body.coalition_id, body.agent_id
-    _member_or_404(cid, agent)
-    try:
-        inquiry = get_inquiry(body.inquiry_id)
-    except PersonaError as exc:
-        raise HTTPException(503, str(exc))
-    if inquiry["reference_id"] != f"{cid}:{agent}":
-        raise HTTPException(403, "This inquiry belongs to a different member.")
-    for row in store_module.store.log(cid):  # one inquiry, one member: stops one ID backing many accounts
-        b = row["body"]
-        if row["type"] == "SYSTEM" and b.get("kind") == "persona_check" and b.get("passed") \
-                and b.get("inquiry_id") == body.inquiry_id and b.get("agent_id") != agent:
-            raise HTTPException(409, "This inquiry already verified another member.")
-    env = environment()
-    if inquiry["status"] in PASSED:
-        label = "Persona sandbox (no real identity check)" if env == "sandbox" else f"Persona {env}"
-        _mark_verified(cid, agent, f"{label}: member verified.", inquiry_id=body.inquiry_id,
-                       status=inquiry["status"], environment=env)
-        return {"verified": True, "status": inquiry["status"]}
-    relay.record_system(cid, "persona_check", agent_id=agent, passed=False, inquiry_id=body.inquiry_id,
-                        status=inquiry["status"], environment=env)
-    return {"verified": False, "status": inquiry["status"]}
+def persona_callback(body: CallbackIn) -> dict:
+    """Mark a member verified once its Persona inquiry passed. Every outcome goes in the public log."""
+    store = store_module.store
+    cid, agent_id = _reference(body)
+    inquiry_id = body.inquiry_id or _dig(body.model_extra or {}, "inquiry-id", "inquiry_id", "inquiryId")
+    if not cid or not agent_id:
+        raise HTTPException(422, "coalition_id and agent_id are required (or a reference-id of '<coalition_id>:<agent_id>').")
+    if not store.get_coalition(cid):
+        raise HTTPException(404, f"Unknown coalition {cid}")
+    member = store.get_member(cid, agent_id)
+    if not member or member["removed_reason"]:
+        raise HTTPException(403, "Only current members can be verified. Send JOIN first.")
 
+    mode = _mode()
+    if mode == STUB_MODE:
+        # No Persona key on this relay: label the stub everywhere it shows up.
+        status, inquiry_id = STUB_MODE, inquiry_id or STUB_MODE
+    else:
+        status = (body.status or _dig(body.model_extra or {}, "status") or "").lower()
+        if status not in PASSED_STATUSES:
+            if not inquiry_id:
+                raise HTTPException(422, "inquiry_id is required when Persona is configured.")
+            status = fetch_inquiry_status(str(inquiry_id))
 
-@router.post("/persona/stub")
-def stub(body: StartIn):
-    """Clearly labeled stub for when Persona isn't set up. Refused if Persona is configured."""
-    if configured():
-        raise HTTPException(409, "Persona is configured: use the real flow.")
-    _member_or_404(body.coalition_id, body.agent_id)
-    _mark_verified(body.coalition_id, body.agent_id, "SANDBOX STUB (simulated): member marked verified.",
-                   stub=True, simulated=True, environment="stub")
-    return {"verified": True, "status": "stub"}
+    verified = mode == STUB_MODE or status in PASSED_STATUSES
+    if verified:
+        store.set_verified(cid, agent_id, True)
+    relay.record_system(cid, "persona_check", agent_id=agent_id, inquiry_id=inquiry_id,
+                        status=status, mode=mode, verified=verified)
+    label = " (sandbox stub, not a real identity check)" if mode == STUB_MODE else ""
+    bus.publish(cid, "chat", {"who": "persona",
+                              "text": (f"{agent_id} is a verified unique human{label}." if verified
+                                       else f"{agent_id} is not verified: inquiry {status}.")})
+    log.info("persona check mode=%s verified=%s agent=%s", mode, verified, agent_id)
+    return {"coalition_id": cid, "agent_id": agent_id, "inquiry_id": inquiry_id,
+            "status": status, "mode": mode, "verified": verified}

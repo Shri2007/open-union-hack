@@ -1,8 +1,326 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Open Union · Join a coalition</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Open Union · Join a coalition</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 16px 48px; max-width: 560px;
+    background: #0b0e14; color: #e8ecf4;
+    font: 17px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 6px; }
+  p.lead { color: #b9c4dc; margin: 0 0 20px; font-size: 0.95rem; }
+  label { display: block; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; margin: 16px 0 6px; }
+  input {
+    width: 100%; padding: 14px 12px; font-size: 17px; border-radius: 10px;
+    border: 1px solid #2a3550; background: #121829; color: #e8ecf4;
+  }
+  input:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  button {
+    width: 100%; margin-top: 16px; padding: 15px 14px; font-size: 17px; font-weight: 600;
+    border: none; border-radius: 10px; background: #2563eb; color: #fff;
+  }
+  button.stub { background: #3a2d10; color: #f0c674; border: 1px solid #6b5418; }
+  button.secondary { background: #1d2437; color: #c6d0e6; }
+  button[disabled] { opacity: 0.55; }
+  section { display: none; }
+  section.on { display: block; }
+  .card { border: 1px solid #222c45; background: #111728; border-radius: 12px; padding: 14px; margin-top: 18px; }
+  .k { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; }
+  .v { font-size: 1.05rem; font-weight: 600; word-break: break-all; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82em; word-break: break-all; }
+  .tag { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 0.72rem; font-weight: 700; }
+  .tag.sandbox { background: #3a2d10; color: #f0c674; }
+  .tag.ok { background: #15361f; color: #6ee79b; }
+  .headline { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: 4px 0; }
+  .headline.ok { color: #4ade80; }
+  .headline.bad { color: #f87171; }
+  .err { border: 1px solid #5a2126; background: #2a1316; color: #ffb4b4; border-radius: 10px; padding: 12px; margin-top: 16px; }
+  .note { border: 1px solid #2a3550; background: #121829; border-radius: 10px; padding: 10px 12px; margin-top: 14px; font-size: 0.88rem; color: #b9c4dc; }
+  #log { list-style: none; margin: 20px 0 0; padding: 0; font-size: 0.82rem; color: #8694b4; }
+  #log li { padding: 4px 0; border-top: 1px solid #1a2238; }
+  footer { margin-top: 26px; font-size: 0.78rem; color: #6f7d9c; }
+</style>
+</head>
 <body>
 <h1>Join a coalition</h1>
-<p>Coming soon.</p>
+<p class="lead">Your limit never leaves this phone. We send only a sealed hash of it, and the number itself only when the deal closes.</p>
+
+<section id="s-need" class="on">
+  <label for="need">What do you want cheaper?</label>
+  <input id="need" type="text" inputmode="text" autocomplete="off" placeholder="phone plan under $60, Bay Area">
+  <label for="price">The most you'd pay per month</label>
+  <input id="price" type="number" inputmode="decimal" min="1" step="0.01" placeholder="60">
+  <button id="go">Find my coalition</button>
+</section>
+
+<section id="s-verify">
+  <div class="card">
+    <div class="k">Coalition</div>
+    <div class="v" id="v-coalition">—</div>
+    <div class="k" style="margin-top:10px">Your sealed commitment</div>
+    <div class="v"><code id="v-commitment">—</code></div>
+  </div>
+  <p class="note">Only verified unique humans count toward the price. Verify once, then your agent joins.</p>
+  <div id="verify-actions"></div>
+</section>
+
+<section id="s-joined">
+  <div class="card">
+    <div class="k">You're in</div>
+    <div class="v"><span id="v-verified" class="tag ok">verified</span> <span id="v-agent"></span></div>
+    <div class="k" style="margin-top:10px">Latest offer</div>
+    <div class="v" id="v-offer">waiting for the vendor…</div>
+  </div>
+  <p class="note" id="wait-note">Keep this page open. When the coalition closes, this phone reveals your price and re-checks the deal.</p>
+</section>
+
+<section id="s-closed">
+  <div class="headline" id="v-result"></div>
+  <p class="note" id="v-result-detail"></p>
+</section>
+
+<div id="err"></div>
+<ul id="log"></ul>
+
+<footer>
+  Your price and a 32-byte random salt stay in this browser's localStorage. The relay only ever sees
+  <code>sha256("&lt;price_cents&gt;:&lt;salt_hex&gt;")</code> until the coalition reaches <code>closing</code>.
+</footer>
+
+<script>
+const params = new URLSearchParams(location.search);
+const FALLBACK_COALITION = params.get("c") || "demo-phone-plan";
+const CLIENT = "web";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const dollars = (cents) => "$" + (cents / 100).toFixed(2);
+const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+function logLine(text) {
+  const li = document.createElement("li");
+  li.textContent = new Date().toLocaleTimeString() + " · " + text;
+  $("log").prepend(li);
+  console.log("[open-union]", text);
+}
+function showError(text) {
+  $("err").innerHTML = '<div class="err">' + esc(text) + "</div>";
+  logLine("error: " + text);
+}
+function show(id) {
+  for (const s of document.querySelectorAll("section")) s.classList.toggle("on", s.id === id);
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = { detail: text }; }
+  if (!res.ok) throw new Error((data && (data.detail?.msg || data.detail)) || res.status + " " + path);
+  return data;
+}
+const send = (coalition_id, agent_id, type, body) =>
+  api("/messages", { method: "POST", headers: { "Content-Type": "application/json" },
+                     body: JSON.stringify({ coalition_id, agent_id, type, body }) });
+
+// ---- the secret half: price and salt live here and nowhere else -------------
+const KEY = (cid) => "open-union/" + cid;
+const loadSecret = (cid) => { try { return JSON.parse(localStorage.getItem(KEY(cid)) || "null"); } catch (e) { return null; } };
+const saveSecret = (cid, s) => localStorage.setItem(KEY(cid), JSON.stringify(s));
+
+async function sealPrice(priceCents) {
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const salt_hex = hex(salt);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(priceCents + ":" + salt_hex));
+  return { price_cents: priceCents, salt_hex, commitment: hex(new Uint8Array(digest)) };
+}
+
+let member = null;  // { coalition_id, agent_id, price_cents, salt_hex, commitment, inquiry_id, verified, joined, revealed }
+let lastOffer = null;
+
+function persist() { saveSecret(member.coalition_id, member); }
+
+// ---- step 1: need + limit ---------------------------------------------------
+$("go").addEventListener("click", async () => {
+  $("err").innerHTML = "";
+  const need = $("need").value.trim();
+  const price = Number($("price").value);
+  if (!need) return showError("Say in one sentence what you want cheaper.");
+  if (!(price > 0)) return showError("Enter the most you'd pay per month.");
+  $("go").disabled = true;
+  try {
+    const match = await api("/coalitions/match", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ need }) });
+    let cid = match.coalition_id;
+    if (match.status === "ask_user" || !cid) {
+      cid = FALLBACK_COALITION;
+      logLine("no clear match; joining " + cid);
+    } else {
+      logLine(match.status + " coalition " + cid + " (" + (match.member_count ?? 0) + " members)");
+    }
+    const sealed = await sealPrice(Math.round(price * 100));
+    member = { coalition_id: cid, agent_id: "anon-" + hex(crypto.getRandomValues(new Uint8Array(5))),
+               ...sealed, inquiry_id: null, verified: false, joined: false, revealed: false };
+    persist();
+    logLine("sealed your limit in this browser; commitment " + member.commitment.slice(0, 16) + "…");
+    await send(cid, member.agent_id, "INTENT", { need });
+    showVerifyStep();
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    $("go").disabled = false;
+  }
+});
+
+// ---- step 2: Persona --------------------------------------------------------
+async function showVerifyStep() {
+  $("v-coalition").textContent = member.coalition_id;
+  $("v-commitment").textContent = member.commitment;
+  show("s-verify");
+  let cfg;
+  try {
+    cfg = await api("/persona/callback");
+  } catch (e) {
+    return showError("Could not reach the relay: " + e.message);
+  }
+  const actions = $("verify-actions");
+  actions.innerHTML = "";
+  if (cfg.mode === "live" && cfg.template_id) {
+    const button = document.createElement("button");
+    button.textContent = "Verify I'm a unique human";
+    button.addEventListener("click", () => {
+      const url = new URL(cfg.hosted_flow_url);
+      url.searchParams.set("inquiry-template-id", cfg.template_id);
+      url.searchParams.set("reference-id", member.coalition_id + ":" + member.agent_id);
+      url.searchParams.set("redirect-uri", location.origin + location.pathname + location.search);
+      logLine("opening the Persona hosted flow");
+      location.href = url.toString();
+    });
+    actions.append(button);
+  } else {
+    const warn = document.createElement("p");
+    warn.className = "note";
+    warn.innerHTML = '<span class="tag sandbox">sandbox</span> No Persona key on this relay, so identity is not really checked. This path is a stub for the demo.';
+    const button = document.createElement("button");
+    button.className = "stub";
+    button.textContent = "Sandbox stub: verified";
+    button.addEventListener("click", () => {
+      logLine("sandbox stub: marking verified without a real Persona inquiry");
+      joinAndCommit("sandbox-stub-" + hex(crypto.getRandomValues(new Uint8Array(4))));
+    });
+    actions.append(warn, button);
+  }
+}
+
+// ---- step 3: JOIN + COMMIT, then the callback marks the member verified -----
+async function joinAndCommit(inquiryId) {
+  try {
+    member.inquiry_id = inquiryId || null;
+    if (!member.joined) {
+      await send(member.coalition_id, member.agent_id, "JOIN",
+                 { persona_inquiry_id: member.inquiry_id, client: CLIENT });
+      await send(member.coalition_id, member.agent_id, "COMMIT", { commitment: member.commitment });
+      member.joined = true;
+      persist();
+      logLine("JOIN and COMMIT sent; the relay has the hash, not the price");
+    }
+    const check = await api("/persona/callback", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id,
+                             inquiry_id: member.inquiry_id }) });
+    member.verified = !!check.verified;
+    persist();
+    logLine("persona check: " + check.status + " (" + check.mode + ") → verified=" + check.verified);
+    $("v-agent").textContent = member.agent_id;
+    const badge = $("v-verified");
+    badge.textContent = check.mode === "sandbox-stub" ? "verified · sandbox stub" : "verified";
+    badge.className = "tag " + (check.mode === "sandbox-stub" ? "sandbox" : "ok");
+    if (!check.verified) { badge.textContent = "not verified: " + check.status; badge.className = "tag sandbox"; }
+    show("s-joined");
+    listen();
+    poll();
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+// ---- step 4: offers, then REVEAL at close -----------------------------------
+function listen() {
+  const es = new EventSource("/stream?coalition_id=" + encodeURIComponent(member.coalition_id));
+  es.addEventListener("offer", (ev) => {
+    const offer = JSON.parse(ev.data);
+    lastOffer = offer;
+    const accept = offer.price_cents <= member.price_cents;  // decided here, from the price the relay can't see
+    $("v-offer").textContent = dollars(offer.price_cents) + "/month — " + (accept ? "within your limit" : "above your limit");
+    logLine("offer " + dollars(offer.price_cents) + "; responding accept=" + accept);
+    send(member.coalition_id, member.agent_id, "RESPOND", { offer_id: offer.offer_id, accept })
+      .catch((e) => logLine("RESPOND failed: " + e.message));
+  });
+}
+
+async function poll() {
+  try {
+    const coalition = await api("/coalitions/" + encodeURIComponent(member.coalition_id));
+    if (coalition.state === "closing" && !member.revealed) await reveal();
+    if (coalition.state === "closed" && !member.revealed) logLine("coalition closed before this phone revealed");
+  } catch (e) {
+    logLine("status check failed: " + e.message);
+  }
+  setTimeout(poll, 4000);
+}
+
+async function reveal() {
+  member.revealed = true;
+  persist();
+  logLine("coalition is closing: revealing price and salt now, for the first time");
+  await send(member.coalition_id, member.agent_id, "REVEAL",
+             { price_cents: member.price_cents, salt_hex: member.salt_hex });
+  const offers = (await api("/log?coalition_id=" + encodeURIComponent(member.coalition_id)))
+    .filter((row) => row.type === "OFFER");
+  const final = offers.length ? offers[offers.length - 1].body : lastOffer;
+  show("s-closed");
+  if (final && final.price_cents <= member.price_cents) {
+    $("v-result").className = "headline ok";
+    $("v-result").textContent = "You save " + dollars(member.price_cents - final.price_cents) + "/month";
+    $("v-result-detail").textContent = "The coalition closed at " + dollars(final.price_cents)
+      + "/month against your limit of " + dollars(member.price_cents) + ".";
+  } else {
+    $("v-result").className = "headline bad";
+    $("v-result").textContent = "Not accepted: the offer was above your limit.";
+    $("v-result-detail").textContent = final
+      ? "The coalition closed at " + dollars(final.price_cents) + "/month; your limit was " + dollars(member.price_cents) + "."
+      : "No vendor offer was recorded for this coalition.";
+  }
+}
+
+// ---- resume: back from the Persona hosted flow, or a reloaded phone ---------
+(function resume() {
+  const inquiryId = params.get("inquiry-id") || params.get("inquiry_id");
+  const candidate = loadSecret(FALLBACK_COALITION) || Object.keys(localStorage)
+    .filter((k) => k.startsWith("open-union/"))
+    .map((k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } })
+    .filter(Boolean)
+    .pop();
+  if (!candidate) return;
+  member = candidate;
+  logLine("resumed your sealed limit from this browser (" + member.coalition_id + ")");
+  if (inquiryId) { joinAndCommit(inquiryId); return; }
+  if (member.joined) {
+    $("v-agent").textContent = member.agent_id;
+    const badge = $("v-verified");
+    if (!member.verified) { badge.textContent = "not verified yet"; badge.className = "tag sandbox"; }
+    show("s-joined");
+    listen();
+    poll();
+  } else {
+    showVerifyStep();
+  }
+})();
+</script>
 </body>
 </html>
