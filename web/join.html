@@ -3,94 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7C5CFC">
 <title>Open Union · Join a coalition</title>
+<link rel="preload" href="fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="orbit.css">
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 20px 16px 48px; max-width: 560px;
-    background: #0b0e14; color: #e8ecf4;
-    font: 17px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
-  h1 { font-size: 1.4rem; margin: 0 0 6px; }
-  p.lead { color: #b9c4dc; margin: 0 0 20px; font-size: 0.95rem; }
-  label { display: block; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; margin: 16px 0 6px; }
-  input {
-    width: 100%; padding: 14px 12px; font-size: 17px; border-radius: 10px;
-    border: 1px solid #2a3550; background: #121829; color: #e8ecf4;
-  }
-  input:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
-  button {
-    width: 100%; margin-top: 16px; padding: 15px 14px; font-size: 17px; font-weight: 600;
-    border: none; border-radius: 10px; background: #2563eb; color: #fff;
-  }
-  button.stub { background: #3a2d10; color: #f0c674; border: 1px solid #6b5418; }
-  button.secondary { background: #1d2437; color: #c6d0e6; }
-  button[disabled] { opacity: 0.55; }
-  section { display: none; }
+  .top { max-width: 520px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 16px) 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .wordmark { font-weight: 800; letter-spacing: .16em; text-transform: uppercase; font-size: .82rem; }
+  .steps { max-width: 520px; margin: 18px auto 0; padding: 0 16px; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .steps li { display: flex; gap: 8px; align-items: baseline; border-top: 3px solid rgba(255,255,255,.38); padding-top: 8px; font-size: .88rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; transition: border-color .2s; }
+  .steps li b { font-weight: 800; }
+  .steps li.done, .steps li.current { border-color: var(--white); font-weight: 700; }
+  main { max-width: 520px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1 { font-size: 2rem; }
+  p.lead { margin: 10px 0 0; max-width: 56ch; font-size: 1.1rem; font-weight: 500; }
+  body[data-step]:not([data-step="s-need"]) p.lead { display: none; }
+  .demo-note { margin-top: 16px; }
+  section { display: none; margin-top: 18px; }
   section.on { display: block; }
-  .card { border: 1px solid #222c45; background: #111728; border-radius: 12px; padding: 14px; margin-top: 18px; }
-  .k { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; }
-  .v { font-size: 1.05rem; font-weight: 600; word-break: break-all; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82em; word-break: break-all; }
-  .tag { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 0.72rem; font-weight: 700; }
-  .tag.sandbox { background: #3a2d10; color: #f0c674; }
-  .tag.ok { background: #15361f; color: #6ee79b; }
-  .headline { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: 4px 0; }
-  .headline.ok { color: #4ade80; }
-  .headline.bad { color: #f87171; }
-  .err { border: 1px solid #5a2126; background: #2a1316; color: #ffb4b4; border-radius: 10px; padding: 12px; margin-top: 16px; }
-  .note { border: 1px solid #2a3550; background: #121829; border-radius: 10px; padding: 10px 12px; margin-top: 14px; font-size: 0.88rem; color: #b9c4dc; }
-  #log { list-style: none; margin: 20px 0 0; padding: 0; font-size: 0.82rem; color: #8694b4; }
-  #log li { padding: 4px 0; border-top: 1px solid #1a2238; }
-  footer { margin-top: 26px; font-size: 0.78rem; color: #6f7d9c; }
+  .stack > * + * { margin-top: 12px; }
+
+  .card.form { padding: 0; }
+  .cell { padding: 12px 18px 0; border-top: 1px solid var(--hair); }
+  .cell:first-child { border-top: 0; }
+  .cell:focus-within { background: #F4F0FF; box-shadow: inset 0 0 0 3px var(--violet); }
+  .cell label { display: block; color: var(--gray); }
+  .cell input { display: block; width: 100%; border: 0; border-radius: 0; background: transparent; padding: 5px 0 14px; font: 600 1.18rem/1.3 var(--sans); color: var(--ink); caret-color: var(--violet); }
+  .cell input:focus, .cell input:focus-visible { outline: none; }
+  .cell input::placeholder { color: #6A6A6A; font-weight: 400; font-style: italic; }
+  .money { display: flex; align-items: baseline; gap: 6px; }
+  .money .unit { font: 700 1.18rem/1.3 var(--sans); color: var(--gray); }
+  .money .per { margin-left: auto; font-size: .85rem; font-weight: 500; color: var(--gray); white-space: nowrap; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  body:has(#err .err) #s-need .cell:has(input:placeholder-shown) { box-shadow: inset 0 0 0 3px var(--bad); }
+  body:has(#err .err) #s-need .cell:has(input:placeholder-shown) label { color: var(--bad); }
+
+  #go::after, #verify-actions > button:not(.stub)::after { content: ""; width: 20px; height: 20px; flex: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235A3EB8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #go[disabled]::after, #verify-actions > button[disabled]::after { background: none; border: 2.5px solid rgba(90,62,184,.35); border-top-color: var(--mid); border-radius: 50%; animation: spin .8s linear infinite; }
+
+  .v { font-size: 1.1rem; font-weight: 700; overflow-wrap: anywhere; margin-top: 3px; }
+  .v code { font-size: .88rem; font-weight: 600; letter-spacing: .02em; }
+  .serial { font: 800 2.1rem/1.05 var(--mono); letter-spacing: .05em; color: var(--mid); margin-top: 4px; }
+  #v-agent { display: inline-block; white-space: nowrap; font: 600 .9rem/1.3 var(--mono); margin-top: 4px; }
+  .headline { font-size: 2.1rem; font-weight: 800; line-height: 1.08; letter-spacing: -.02em; color: var(--mid); max-width: 14ch; }
+  .headline.bad { color: var(--bad); max-width: none; font-size: 1.7rem; }
+  .detail { margin: 10px 0 0; max-width: 28ch; }
+  .proof { margin: 0; }
+  .proof a { font-weight: 700; color: var(--white); }
+  .orbit-land { animation: land .9s cubic-bezier(.2, 1, .3, 1) both; }
+  @keyframes land { from { opacity: 0; transform: rotate(-35deg) scale(.7); } to { opacity: .9; transform: none; } }
+
+  details.activity { margin-top: 24px; }
+  details.activity summary { cursor: pointer; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: 14px 0; }
+  details.activity summary:focus-visible { outline: 3px solid var(--white); outline-offset: 2px; }
+  #log { list-style: none; margin: 6px 0 0; padding: 4px 12px; font: .8rem/1.4 var(--mono); background: rgba(26,26,46,.3); border-radius: 10px; }
+  #log:empty { display: none; }
+  #log li { padding: 5px 0; border-top: 1px solid rgba(255,255,255,.28); overflow-wrap: anywhere; }
+  footer { margin-top: 22px; font-size: .88rem; max-width: 60ch; background: rgba(26,26,46,.3); padding: 12px 14px; border-radius: 10px; }
+  @media (min-width: 720px) { h1 { font-size: 2.3rem; } main { padding-top: 34px; } }
 </style>
 </head>
 <body>
+<header class="top">
+  <span class="wordmark">Open Union</span>
+  <span class="pill" title="Demo: simulated vendor, sandbox identity checks, nothing is bought">Demo</span>
+</header>
+<ol class="steps" id="steps" aria-label="Progress">
+  <li class="current" aria-current="step"><b>01</b> Ask</li>
+  <li><b>02</b> Verify</li>
+  <li><b>03</b> Joined</li>
+</ol>
+
+<main>
 <h1>Join a coalition</h1>
-<p class="lead">Your limit never leaves this phone. We send only a sealed hash of it, and the number itself only when the deal closes.</p>
+<p class="lead">Your limit stays sealed on this phone. The relay sees only a hash of it until the deal closes, then your phone reveals the number.</p>
 
 <section id="s-need" class="on">
-  <label for="need">What do you want cheaper?</label>
-  <input id="need" type="text" inputmode="text" autocomplete="off" placeholder="phone plan under $60, Bay Area">
-  <label for="price">The most you'd pay per month</label>
-  <input id="price" type="number" inputmode="decimal" min="1" step="0.01" placeholder="60">
-  <button id="go">Find my coalition</button>
+  <p class="note demo-note">Demo: the vendor and most members are simulated, and identity checks run in sandbox. Nothing is bought.</p>
+  <div class="card card--white form" style="margin-top:14px">
+    <div class="cell">
+      <label class="label" for="need">What do you want cheaper?</label>
+      <input id="need" type="text" inputmode="text" autocomplete="off" placeholder="phone plan under $60, Bay Area">
+    </div>
+    <div class="cell">
+      <label class="label" for="price">The most you'd pay per month</label>
+      <div class="money"><span class="unit" aria-hidden="true">$</span>
+        <input id="price" type="number" inputmode="decimal" min="1" step="0.01" placeholder="60">
+        <span class="per" aria-hidden="true">per month</span></div>
+    </div>
+  </div>
+  <button id="go" class="btn">Find my coalition</button>
 </section>
 
-<section id="s-verify">
-  <div class="card">
-    <div class="k">Coalition</div>
+<section id="s-verify" class="stack">
+  <div class="card card--navy">
+    <div class="label muted">Coalition</div>
     <div class="v" id="v-coalition">—</div>
-    <div class="k" style="margin-top:10px">Your sealed commitment</div>
+    <div class="label muted" style="margin-top:16px">Your sealed commitment</div>
     <div class="v"><code id="v-commitment">—</code></div>
   </div>
   <p class="note">Only verified unique humans count toward the price. Verify once, then your agent joins.</p>
   <div id="verify-actions"></div>
 </section>
 
-<section id="s-joined">
-  <div class="card">
-    <div class="k">You're in</div>
+<section id="s-joined" class="stack">
+  <div class="card card--white">
+    <div class="orbit-art" id="orbit-r"></div>
+    <div class="label muted">Sealed receipt</div>
+    <div class="serial" id="r-serial">&nbsp;</div>
+    <div class="muted" style="margin-top:6px;max-width:20ch">Limit sealed on this phone</div>
+  </div>
+  <div class="card card--navy">
+    <div class="label muted">Verification</div>
     <div class="v"><span id="v-verified" class="tag ok">verified</span> <span id="v-agent"></span></div>
-    <div class="k" style="margin-top:10px">Latest offer</div>
+    <div class="label muted" style="margin-top:16px">Sealed commitment</div>
+    <div class="v"><code id="r-commit">—</code></div>
+  </div>
+  <div class="card card--deep">
+    <div class="orbit-art"></div>
+    <div class="label muted">Latest offer · simulated vendor</div>
     <div class="v" id="v-offer">waiting for the vendor…</div>
   </div>
   <p class="note" id="wait-note">Keep this page open. When the coalition closes, this phone reveals your price and re-checks the deal.</p>
 </section>
 
-<section id="s-closed">
-  <div class="headline" id="v-result"></div>
-  <p class="note" id="v-result-detail"></p>
+<section id="s-closed" class="stack">
+  <div class="card card--white" style="min-height:190px">
+    <div class="orbit-art" id="orbit-c" style="width:150px;height:150px"></div>
+    <div class="headline" id="v-result"></div>
+    <p class="detail muted" id="v-result-detail"></p>
+  </div>
+  <div class="card card--navy"><p class="proof">Your price was revealed and can be re-checked by anyone. <a id="c-link" href="/verify.html">Re-check the deal</a></p></div>
+  <p class="note">Demo result: the vendor is simulated and nothing was bought.</p>
 </section>
 
-<div id="err"></div>
-<ul id="log"></ul>
+<div id="err" role="alert" aria-live="polite"></div>
+<details class="activity">
+  <summary>Activity log</summary>
+  <ul id="log"></ul>
+</details>
 
 <footer>
   Your price and a 32-byte random salt stay in this browser's localStorage. The relay only ever sees
   <code>sha256("&lt;price_cents&gt;:&lt;salt_hex&gt;")</code> until the coalition reaches <code>closing</code>.
 </footer>
+</main>
 
 <script>
 const params = new URLSearchParams(location.search);
@@ -114,6 +174,36 @@ function showError(text) {
 }
 function show(id) {
   for (const s of document.querySelectorAll("section")) s.classList.toggle("on", s.id === id);
+  try { uiAfterShow(id); } catch (e) { console.warn("[open-union] ui", e); }
+}
+
+// ---- presentation only: progress steps, per-step heading, grouped hash, orbit landing. Never touches the flow. ----
+const STEP_ORDER = ["s-need", "s-verify", "s-joined"];
+const H1S = { "s-need": "Join a coalition", "s-verify": "Verify you're a real person", "s-joined": "You're in", "s-closed": "Deal closed" };
+const groupHash = (h) => (h.match(/.{1,8}/g) || [h]).join(" ");
+const land = (el) => { el.classList.remove("orbit-land"); void el.getBoundingClientRect(); el.classList.add("orbit-land"); };
+function uiAfterShow(id) {
+  document.body.dataset.step = id;
+  document.querySelector("h1").textContent = H1S[id] || H1S["s-need"];
+  const at = id === "s-closed" ? STEP_ORDER.length : STEP_ORDER.indexOf(id);
+  document.querySelectorAll("#steps li").forEach((li, i) => {
+    li.classList.toggle("done", i < at);
+    li.classList.toggle("current", i === at);
+    if (i === at) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+  });
+  if (member && member.commitment) {
+    if (id === "s-verify") $("v-commitment").textContent = groupHash(member.commitment);
+    if (id === "s-joined") {
+      $("r-commit").textContent = groupHash(member.commitment);
+      $("r-serial").textContent = member.commitment.slice(0, 4).toUpperCase() + " " + member.commitment.slice(4, 8).toUpperCase();
+      land($("orbit-r"));
+    }
+    if (id === "s-closed") {
+      $("c-link").href = "/verify.html?c=" + encodeURIComponent(member.coalition_id);
+      land($("orbit-c"));
+    }
+  }
+  window.scrollTo(0, 0);
 }
 
 async function api(path, options) {
@@ -221,7 +311,7 @@ async function showVerifyStep() {
     warn.innerHTML = '<span class="tag sandbox">sandbox</span> No Persona key on this relay, so identity is not really checked. This path is a stub for the demo.';
     const button = document.createElement("button");
     button.className = "stub";
-    button.textContent = "Sandbox stub: verified";
+    button.textContent = "Continue with sandbox stub";
     button.addEventListener("click", () => {
       logLine("sandbox stub: marking verified without a real Persona inquiry");
       joinAndCommit("sandbox-stub-" + hex(crypto.getRandomValues(new Uint8Array(4))));

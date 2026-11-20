@@ -2,64 +2,93 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7C5CFC">
 <title>Scam the Union: vendor console (simulated)</title>
+<link rel="preload" href="fonts/dm-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="orbit.css">
 <style>
-  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --dim:#9aa3b5; --bad:#ff5d5d; --good:#4cd38b; --warn:#ffb84d; }
-  * { box-sizing: border-box; }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:16px/1.45 system-ui, sans-serif; max-width:760px; margin-inline:auto; }
-  h1 { font-size:22px; margin:0 0 4px; }
-  .tag { display:inline-block; font-size:12px; padding:2px 8px; border:1px solid var(--warn); color:var(--warn); border-radius:99px; vertical-align:middle; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin:14px 0; }
-  label { display:block; font-size:13px; color:var(--dim); margin:10px 0 4px; }
-  input, textarea { width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:#0f1115; color:var(--text); font:inherit; }
-  textarea { min-height:80px; resize:vertical; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
-  button { padding:10px 14px; border-radius:8px; border:1px solid var(--line); background:#232836; color:var(--text); font:inherit; cursor:pointer; }
-  button.primary { background:#2f5bea; border-color:#2f5bea; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  .warn { border-color:var(--warn); color:var(--warn); }
-  .verdict { font-size:28px; font-weight:700; }
-  .reject { color:var(--bad); } .pass { color:var(--good); } .ask_member { color:var(--warn); }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
-  .p-high { color:var(--bad); font-weight:700; }
-  .dim { color:var(--dim); font-size:13px; }
-  .err { color:var(--bad); }
+  .top { max-width: 640px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 16px) 16px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .wordmark { font-weight: 800; letter-spacing: .16em; text-transform: uppercase; font-size: .82rem; }
+  main { max-width: 640px; margin: 0 auto; padding: 22px 16px 56px; }
+  h1 { font-size: 2rem; }
+  .dim { margin: 10px 0 0; max-width: 58ch; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: var(--amber); color: var(--amber-ink); border-radius: 999px; padding: 3px 10px; vertical-align: middle; }
+  #demoWarn { margin-top: 16px; }
+  #demoWarn[hidden] { display: none; }
+  .card.form { padding: 0; margin-top: 16px; }
+  .cell { padding: 12px 18px 0; border-top: 1px solid var(--hair); }
+  .cell:first-child { border-top: 0; }
+  .cell:focus-within { background: #F4F0FF; box-shadow: inset 0 0 0 3px var(--violet); }
+  .cell label { display: block; color: var(--gray); }
+  .cell input, .cell textarea { display: block; width: 100%; border: 0; border-radius: 0; background: transparent; padding: 5px 0 14px; font: 600 1.1rem/1.35 var(--sans); color: var(--ink); caret-color: var(--violet); }
+  .cell textarea { min-height: 84px; resize: vertical; }
+  .cell input:focus, .cell textarea:focus { outline: none; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row button { flex: 1 1 150px; margin-top: 12px; width: auto; }
+  button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 14px 18px; font: 700 1rem/1.2 var(--sans); border: 0; border-radius: 10px; background: var(--white); color: var(--mid); cursor: pointer; transition: background .15s, transform .15s; }
+  button:hover { background: var(--pale); }
+  button:active { transform: scale(.985); }
+  button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
+  button.ghost { background: transparent; color: var(--white); border: 2px solid rgba(255,255,255,.85); }
+  button.ghost:hover { background: rgba(255,255,255,.14); }
+  button[disabled] { opacity: .6; cursor: not-allowed; }
+  #result { margin-top: 16px; }
+  #result[hidden] { display: none; }
+  .verdict { font-size: 2.2rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.05; margin: 4px 0 2px; }
+  .verdict.reject { color: #FF8A93; } .verdict.pass { color: #7CE3B0; } .verdict.ask_member { color: var(--amber); }
+  #note { min-height: 1em; }
+  #result h3 { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--lilac); margin: 18px 0 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th { text-align: left; font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--lilac); padding-bottom: 6px; }
+  td { padding: 8px 8px 8px 0; border-top: 1px solid rgba(255,255,255,.16); vertical-align: top; overflow-wrap: anywhere; }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; padding: 8px 0 8px 12px; white-space: nowrap; overflow-wrap: normal; }
+  th:last-child { text-align: right; padding-left: 12px; }
+  .p-high { color: #FF8A93; font-weight: 800; }
+  #send { margin-top: 18px; width: 100%; }
+  #sendMsg { margin-top: 8px; min-height: 1em; }
+  #error:not(:empty) { margin-top: 14px; padding: 12px 14px; border: 2px solid var(--bad); background: var(--bad-bg); color: var(--bad); border-radius: 10px; font-weight: 700; }
+  @media (max-width: 420px) { h1 { font-size: 1.7rem; } }
 </style>
 </head>
 <body>
+<header class="top"><span class="wordmark">Open Union</span><span class="pill">Demo</span></header>
+<main>
 <h1>Scam the Union <span class="tag">simulated vendor</span></h1>
 <p class="dim">Try offers on the coalition. Senso finds the fine print, TypeSafe answers three trap questions, and code decides. Nothing here is a real vendor or a real purchase.</p>
 
-<div id="demoWarn" class="card warn" hidden>This is the live demo coalition. Offers sent from here will show on the stage screen.</div>
+<div id="demoWarn" class="note" hidden>This is the live demo coalition. Offers sent from here will show on the stage screen.</div>
 
-<div class="card">
-  <label for="cid">Coalition id (use your own test coalition)</label>
-  <input id="cid" autocomplete="off">
-  <label for="price">Offer price per month (USD)</label>
-  <input id="price" type="number" min="1" step="1" value="58">
-  <label for="terms">Offer terms (simulated vendor text)</label>
-  <textarea id="terms"></textarea>
-  <div class="row">
-    <button type="button" id="presetTrap">Load trap offer</button>
-    <button type="button" id="presetClean">Load clean offer</button>
-    <button type="button" id="check" class="primary">Check offer</button>
-  </div>
+<div class="card card--white form">
+  <div class="cell"><label class="label" for="cid">Coalition id (use your own test coalition)</label>
+  <input id="cid" autocomplete="off"></div>
+  <div class="cell"><label class="label" for="price">Offer price per month (USD)</label>
+  <input id="price" type="number" min="1" step="1" value="58"></div>
+  <div class="cell"><label class="label" for="terms">Offer terms (simulated vendor text)</label>
+  <textarea id="terms"></textarea></div>
+</div>
+<div class="row">
+  <button type="button" id="presetTrap" class="ghost">Load trap offer</button>
+  <button type="button" id="presetClean" class="ghost">Load clean offer</button>
+  <button type="button" id="check" class="primary">Check offer</button>
 </div>
 
-<div id="result" class="card" hidden>
-  <div class="dim">Verdict (decided in code)</div>
+<div id="result" class="card card--navy" hidden>
+  <div class="orbit-art" aria-hidden="true"></div>
+  <div class="label muted">Verdict (decided in code)</div>
   <div id="verdict" class="verdict"></div>
-  <div id="note" class="dim"></div>
+  <div id="note" class="muted"></div>
   <h3>Trap questions</h3>
   <table><thead><tr><th>Question</th><th>p</th></tr></thead><tbody id="qs"></tbody></table>
   <h3>Senso citations</h3>
   <table><thead><tr><th>content</th><th>version</th><th>score</th></tr></thead><tbody id="cites"></tbody></table>
-  <div class="row"><button type="button" id="send" disabled>Send as OFFER to the log (simulated vendor)</button></div>
-  <div id="sendMsg" class="dim"></div>
+  <button type="button" id="send" disabled>Send as OFFER to the log (simulated vendor)</button>
+  <div id="sendMsg" class="muted"></div>
 </div>
-<div id="error" class="err"></div>
+<div id="error" role="alert" aria-live="polite"></div>
+</main>
 
 <script>
 const $ = id => document.getElementById(id);

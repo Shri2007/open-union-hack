@@ -1,0 +1,67 @@
+/* Orbit Purple for Open Union: shared tokens and components.
+   Palette from the Orbit Purple style (violet ground; white, navy and deep-purple card variants; orbit line art).
+   Fonts and radii were read off the style's preview images (the style page publishes only the palette).
+   Self-contained: no CDN, no build step. */
+@font-face {
+  font-family: "DM Sans"; font-style: normal; font-weight: 100 1000; font-display: swap;
+  src: url("fonts/dm-sans-latin.woff2") format("woff2");
+}
+:root {
+  color-scheme: light;
+  --violet: #7C5CFC; --white: #FFFFFF; --navy: #1A1A2E; --deep: #6B4BD4;
+  --lilac: #A18AFF; --mid: #5A3EB8; --pale: #E0D8FF; --ink: #1A1A1A; --gray: #555555;
+  --hair: #E6E0FF;                       /* hairline on white cards */
+  --amber: #FFD166; --amber-ink: #3B2A00; /* sandbox and stub only */
+  --bad: #B3261E; --bad-bg: #FFF1F0;
+  --sans: "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --r: 12px;
+}
+* { box-sizing: border-box; }
+html { background: var(--violet); -webkit-text-size-adjust: 100%; }
+body { margin: 0; min-height: 100vh; background: var(--violet); color: var(--white); font: 400 17px/1.5 var(--sans); }
+::selection { background: var(--navy); color: var(--white); }
+a { color: inherit; text-underline-offset: 3px; }
+h1, h2, h3 { font-family: var(--sans); font-weight: 700; letter-spacing: -.02em; line-height: 1.08; margin: 0; text-wrap: balance; }
+code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+/* tracked label: the style's small caps voice, used for field and data labels */
+.label { font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+
+/* cards: three variants, each with its own text and line colours */
+.card { position: relative; overflow: hidden; border-radius: var(--r); padding: 18px; }
+.card--white { background: var(--white); color: var(--ink); }
+.card--white .muted { color: var(--gray); }
+.card--navy { background: var(--navy); color: var(--white); }
+.card--navy .muted { color: var(--lilac); }
+.card--deep { background: var(--deep); color: var(--white); }
+.card--deep .muted { color: var(--pale); }
+.orbit-art { position: absolute; width: 124px; height: 124px; right: -30px; top: -34px; pointer-events: none; background: no-repeat center / contain; opacity: .85; }
+.card--white .orbit-art { background-image: url("orbit-mid.svg"); }
+.card--navy .orbit-art, .card--deep .orbit-art { background-image: url("orbit-lilac.svg"); }
+.card > *:not(.orbit-art) { position: relative; }
+
+/* buttons: white on the violet ground (as the style's CTA), violet inside a white card */
+.btn, #verify-actions > button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; margin-top: 16px; padding: 14px 18px; font: 700 1.05rem/1.2 var(--sans); border: 0; border-radius: 10px; background: var(--white); color: var(--mid); cursor: pointer; transition: background .15s, transform .15s; }
+.btn:hover, #verify-actions > button:hover { background: var(--pale); }
+.btn:active, #verify-actions > button:active { transform: scale(.985); }
+.btn:focus-visible, #verify-actions > button:focus-visible { outline: 3px solid var(--white); outline-offset: 3px; }
+.btn--solid { background: var(--violet); color: var(--white); }
+.btn--solid:hover { background: var(--deep); }
+.card .btn:focus-visible { outline-color: var(--navy); }
+.btn[disabled], #verify-actions > button[disabled] { background: var(--pale); color: var(--mid); opacity: .8; cursor: progress; }
+button.stub, #verify-actions > button.stub { background: var(--amber); color: var(--amber-ink); }
+button.stub:hover, #verify-actions > button.stub:hover { background: #FFC94D; }
+
+/* pills and chips */
+.pill { display: inline-block; border: 1.5px solid rgba(255,255,255,.85); border-radius: 999px; padding: 2px 10px; font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.chip, .tag { display: inline-block; border-radius: 6px; padding: 2px 8px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; vertical-align: 1px; }
+.chip.ok, .tag.ok { background: var(--pale); color: var(--mid); }
+.chip.sandbox, .tag.sandbox { background: var(--amber); color: var(--amber-ink); }
+
+/* notes and errors on the violet ground */
+.note { margin: 14px 0 0; padding: 12px 14px; border: 1.5px solid rgba(224,216,255,.75); background: rgba(26,26,46,.28); color: var(--white); border-radius: 10px; font-size: .95rem; }
+.note:has(.chip.sandbox), .note:has(.tag.sandbox) { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); font-weight: 600; }
+.err { margin-top: 14px; padding: 12px 14px; border: 2px solid var(--bad); background: var(--bad-bg); color: var(--bad); border-radius: 10px; font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
