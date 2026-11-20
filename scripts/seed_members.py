@@ -97,6 +97,8 @@ async def seed(args) -> int:
 
     # Saved before anything is sent: a member whose COMMIT lands but whose response is lost
     # still needs its salt, and the relay refuses a second commitment.
+    for m in members:
+        m["seeded"] = False
     store = load_secrets(args.secrets)
     store.setdefault(args.coalition, []).extend(members)
     save_secrets(args.secrets, store)
@@ -114,6 +116,9 @@ async def seed(args) -> int:
         counts = await coalition_counts(client, args.relay, args.coalition)
 
     failed = sum(1 for r in results if isinstance(r, Exception))
+    for m, r in zip(members, results):
+        m["seeded"] = not isinstance(r, Exception)
+    save_secrets(args.secrets, store)
 
     # Verification is the relay's call (SIMULATED_VERIFIED on the server), so read it back.
     counts_note = (f"relay counts {counts['verified']} verified / {counts['unverified']} unverified"
@@ -122,6 +127,25 @@ async def seed(args) -> int:
           f"prices {PRICE_MIN_CENTS}-{PRICE_MAX_CENTS} cents sealed in {args.secrets}, "
           f"{counts_note}")
     return 1 if failed else 0
+
+
+def split_failures(members: list, results: list) -> tuple[int, str]:
+    """Count failures, apart from members the relay rejects because their seeding never landed.
+
+    Unconfirmed members are still tried, since a COMMIT whose response was lost did reach
+    the relay. Only the relay's own 403 for a non-member is excused; every other error,
+    transport or HTTP, stays a failure.
+    """
+    failed = unconfirmed = 0
+    for m, r in zip(members, results):
+        if not isinstance(r, Exception):
+            continue
+        not_a_member = isinstance(r, httpx.HTTPStatusError) and r.response.status_code == 403
+        if not_a_member and not m.get("seeded", True):
+            unconfirmed += 1
+        else:
+            failed += 1
+    return failed, f", {unconfirmed} never seeded" if unconfirmed else ""
 
 
 def members_for(args) -> list:
@@ -145,9 +169,10 @@ async def reveal(args) -> int:
 
     sent = [r for r in results if not isinstance(r, Exception)]
     matched = sum(1 for r in sent if r.get("ok"))
+    failed, unconfirmed = split_failures(members, results)
     print(f"simulated (firedrill): revealed {len(sent)}/{len(members)} sealed prices, "
-          f"{matched} matched their commitment, {len(members) - len(sent)} failed")
-    return 1 if len(sent) != len(members) else 0
+          f"{matched} matched their commitment, {failed} failed{unconfirmed}")
+    return 1 if failed else 0
 
 
 async def respond(args) -> int:
@@ -167,9 +192,10 @@ async def respond(args) -> int:
 
     sent = [r for r in results if not isinstance(r, Exception)]
     accepted = sum(1 for r in sent if r)
+    failed, unconfirmed = split_failures(members, results)
     print(f"simulated (firedrill): responded to offer {args.offer_id} at {args.price_cents} cents - "
-          f"{accepted} accepted, {len(sent) - accepted} declined, {len(members) - len(sent)} failed")
-    return 1 if len(sent) != len(members) else 0
+          f"{accepted} accepted, {len(sent) - accepted} declined, {failed} failed{unconfirmed}")
+    return 1 if failed else 0
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
