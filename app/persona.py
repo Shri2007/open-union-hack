@@ -1,8 +1,8 @@
 """Persona verification: only a verified unique human counts toward the headcount (docs/CONTRACT.md).
 
-The join page opens Persona's hosted flow with PERSONA_TEMPLATE_ID and then posts here; Persona's own
-webhook can post here too. Either way a member is marked verified only when its inquiry is completed
-or approved. With no PERSONA_API_KEY the relay runs a clearly labeled sandbox stub instead.
+The join page starts an inquiry server-side and then posts its id here, and a member is marked verified
+only when Persona itself reports that inquiry as completed or approved for that member. Nothing a caller
+says about status counts. With no PERSONA_API_KEY the relay runs a clearly labeled sandbox stub instead.
 """
 import logging
 from typing import Any
@@ -27,7 +27,7 @@ LIVE_MODE = "live"
 
 
 class CallbackIn(BaseModel):
-    """Our join page's shape. A Persona webhook posts its own JSON, parsed out of `extra`."""
+    """Our join page's shape. A webhook's nested reference-id and inquiry id are read out of `extra`."""
     coalition_id: str | None = Field(default=None, max_length=36)
     agent_id: str | None = Field(default=None, max_length=64)
     inquiry_id: str | None = Field(default=None, max_length=128)
