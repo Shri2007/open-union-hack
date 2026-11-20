@@ -89,6 +89,8 @@ pytest
 5. The vendor's final offer is checked against the fine print: the trap offer ($58 that becomes $95 after three months, on a 24-month agreement with a line fee) is rejected, and the clean offer passes. Each shows its Senso citations.
 6. The coalition closes, members reveal, and the public verifier shows every commitment matches.
 
+**Walkout (W):** when the vendor stalls, the coalition walks to a competitor. Every member's phone shows a strike screen, and the vendor's published rules give a coalition that walks $2 off the curve. The stage screen's pixel-art vendor (fictional, drawn in code) reads his lines aloud and changes mood: smug, nervous, panicking during a walkout, defeated at the close, where the room's yearly savings count up.
+
 ## Let any agent join (MCP)
 
 `union_mcp/` is a local MCP server (stdio) that lets Claude Desktop, Cursor or any MCP client act as a member. Its five tools are `union_find`, `union_join`, `union_status`, `union_verify`, `union_respond` and `union_reveal`. The walk-away price and salt stay in `~/.open-union/secrets.json` on your machine, and the accept decision is computed in code, not by the model.

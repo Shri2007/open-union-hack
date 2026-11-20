@@ -116,6 +116,26 @@
   #presenter .reset b { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-right: 10px; }
   #presenter .status { margin-top: 8px; font-size: 13px; color: var(--dim); min-height: 17px; }
   #presenter .status.err { color: var(--bad); }
+  /* Pixel vendor: an original pixel-art sales rep for the fictional Northline Mobile. */
+  .vendor-stage { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; }
+  #vendor-sprite { width: 176px; height: 176px; image-rendering: pixelated; background: #0b0f18;
+    border: 2px solid var(--line); border-radius: 6px; }
+  .bubble { position: relative; background: #f4efe2; color: #161a24; border-radius: 4px;
+    padding: 14px 18px; font: 600 clamp(15px, 1.7vw, 24px)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+    min-height: 64px; box-shadow: 4px 4px 0 #000; }
+  .bubble::before { content: ""; position: absolute; left: -14px; top: 26px; border: 8px solid transparent;
+    border-right-color: #f4efe2; border-width: 8px 14px 8px 0; }
+  .bubble .name { display: block; font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+    color: #8a5a00; margin-bottom: 4px; }
+  .mood { font-size: 13px; color: var(--dim); margin-top: 8px; letter-spacing: .08em; text-transform: uppercase; }
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50; pointer-events: none;
+    background: rgba(5, 7, 12, .86); text-align: center; }
+  .overlay[hidden] { display: none; }
+  .overlay .big { font: 900 clamp(48px, 9vw, 120px)/1 system-ui, sans-serif; letter-spacing: -.02em; }
+  .overlay .small { font-size: clamp(18px, 2.4vw, 30px); color: var(--dim); margin-top: 14px; }
+  #strike .big { color: var(--bad); }
+  #savings .big { color: var(--good); font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { #vendor-sprite { animation: none; } }
 </style>
 </head>
 <body>
@@ -145,6 +165,17 @@
   </section>
 </div>
 
+<section class="panel vendor-stage" aria-label="The vendor">
+  <canvas id="vendor-sprite" width="32" height="32" aria-hidden="true"></canvas>
+  <div>
+    <div class="bubble" id="bubble"><span class="name">Northline Mobile sales rep · simulated</span><span id="bubble-text">…</span></div>
+    <div class="mood" id="vendor-mood">mood: smug</div>
+  </div>
+</section>
+
+<div class="overlay" id="strike" hidden><div><div class="big">✊ ON STRIKE</div><div class="small" id="strike-text"></div></div></div>
+<div class="overlay" id="savings" hidden><div><div class="small">This room just saved</div><div class="big" id="savings-n">$0</div><div class="small" id="savings-sub">a year</div></div></div>
+
 <div class="grid">
   <section class="panel">
     <h2>Offer price vs members</h2>
@@ -173,6 +204,8 @@
 <aside id="presenter">
   <h3>Presenter <span class="tag">hotkeys</span></h3>
   <ol id="beats"></ol>
+  <div class="reset"><b>W</b> walkout (phones strike)</div>
+  <div class="reset"><b>V</b> vendor voice on/off</div>
   <div class="reset" id="p-reset"><b>R</b> reset (keeps real members)</div>
   <div class="status" id="p-status"></div>
 </aside>
@@ -395,6 +428,151 @@ function connect() {
   return source;
 }
 
+// --- pixel vendor --------------------------------------------------------
+// An original 32x32 pixel-art sales rep, drawn in code (no image files to fail on stage).
+// Mood follows the demo: smug, nervous as the price falls, panic during a walkout, defeated at close.
+const vendor = { mood: "smug", talking: false, blink: false, frame: 0, moodUntil: 0, voice: true };
+const SPRITE = $("vendor-sprite").getContext("2d");
+const C = { hair: "#3b2416", skin: "#f1c27d", shade: "#d9a066", eye: "#1a1a2e", white: "#ffffff",
+  mouth: "#7a2e2e", suit: "#23305a", suit2: "#1a2444", shirt: "#e8ecf5", tie: "#d6303c",
+  tag: "#ffcc33", sweat: "#7fd3ff", gray: "#9aa3b5" };
+
+function px(x, y, w, h, color) { SPRITE.fillStyle = color; SPRITE.fillRect(x, y, w, h); }
+
+function drawVendor() {
+  const m = vendor.mood;
+  const shake = m === "panic" ? (vendor.frame % 2 ? 1 : -1) : 0;
+  const slump = m === "defeated" ? 2 : 0;
+  const bob = m === "smug" && vendor.frame % 16 < 8 ? 0 : (m === "smug" ? 1 : 0);
+  SPRITE.clearRect(0, 0, 32, 32);
+  SPRITE.save();
+  SPRITE.translate(shake, slump + bob);
+  // suit, shirt, tie, name tag
+  px(5, 22, 22, 10, C.suit); px(5, 22, 3, 10, C.suit2); px(24, 22, 3, 10, C.suit2);
+  px(13, 21, 6, 5, C.shirt); px(15, 22, 2, 7, C.tie); px(14, 22, 4, 1, C.tie);
+  px(20, 25, 4, 2, C.tag);
+  // neck and head
+  px(13, 18, 6, 3, C.shade);
+  px(9, 6, 14, 13, C.skin); px(8, 9, 1, 6, C.skin); px(23, 9, 1, 6, C.skin);
+  px(9, 17, 14, 2, C.shade);
+  // slicked hair with a side part
+  px(9, 4, 14, 3, C.hair); px(8, 5, 2, 5, C.hair); px(22, 5, 2, 4, C.hair); px(12, 3, 9, 1, C.hair);
+  px(15, 4, 1, 2, C.skin);
+  // brows by mood
+  const browY = m === "panic" ? 8 : 9;
+  if (m === "smug") { px(11, 10, 3, 1, C.hair); px(18, 9, 3, 1, C.hair); }          // one brow raised
+  else if (m === "defeated") { px(11, 9, 1, 1, C.hair); px(12, 10, 2, 1, C.hair); px(18, 10, 2, 1, C.hair); px(20, 9, 1, 1, C.hair); }
+  else { px(11, browY, 3, 1, C.hair); px(18, browY, 3, 1, C.hair); }
+  // eyes (wide in panic, closed on a blink)
+  if (vendor.blink && m !== "panic") { px(11, 12, 3, 1, C.eye); px(18, 12, 3, 1, C.eye); }
+  else if (m === "panic") { px(11, 11, 3, 3, C.white); px(18, 11, 3, 3, C.white); px(12, 12, 1, 1, C.eye); px(19, 12, 1, 1, C.eye); }
+  else { px(12, 11, 2, 2, C.eye); px(19, 11, 2, 2, C.eye); }
+  // nose
+  px(15, 13, 2, 2, C.shade);
+  // mouth: flaps while talking, otherwise depends on mood
+  const open = vendor.talking && vendor.frame % 2 === 0;
+  if (open) { px(13, 15, 6, 2, C.mouth); px(14, 17, 4, 1, C.mouth); }
+  else if (m === "smug") { px(13, 16, 5, 1, C.mouth); px(18, 15, 1, 1, C.mouth); }        // smirk
+  else if (m === "defeated") { px(13, 16, 6, 1, C.mouth); px(12, 17, 1, 1, C.mouth); px(19, 17, 1, 1, C.mouth); }
+  else if (m === "panic") { px(13, 15, 6, 3, C.mouth); }
+  else { px(13, 16, 6, 1, C.mouth); }
+  // sweat when the price is slipping
+  if (m === "nervous" || m === "panic") {
+    px(24, 8 + (vendor.frame % 6), 1, 2, C.sweat);
+    if (m === "panic") { px(7, 9 + ((vendor.frame + 3) % 6), 1, 2, C.sweat); px(25, 12 + ((vendor.frame + 1) % 5), 1, 2, C.sweat); }
+  }
+  SPRITE.restore();
+  if (m === "defeated") { SPRITE.globalCompositeOperation = "saturation"; px(0, 0, 32, 32, C.gray); SPRITE.globalCompositeOperation = "source-over"; }
+}
+
+function setMood(mood, holdMs) {
+  vendor.mood = mood;
+  vendor.moodUntil = holdMs ? Date.now() + holdMs : 0;
+  $("vendor-mood").textContent = "mood: " + mood;
+}
+
+setInterval(() => {
+  vendor.frame++;
+  vendor.blink = vendor.frame % 40 === 0;
+  if (vendor.moodUntil && Date.now() > vendor.moodUntil) { vendor.moodUntil = 0; setMood("nervous"); }
+  drawVendor();
+}, 130);
+
+// Speech: type the line into the bubble and say it out loud. Browsers only allow speech after the
+// presenter has pressed a key on this page, which every beat does. V toggles the voice.
+function pickVoice() {
+  const voices = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  return voices.find((v) => /Daniel|Alex|Fred|Google UK English Male/i.test(v.name))
+      || voices.find((v) => v.lang && v.lang.startsWith("en")) || null;
+}
+
+function vendorSay(text) {
+  const box = $("bubble-text");
+  let i = 0;
+  clearInterval(vendorSay.typer);
+  vendorSay.typer = setInterval(() => { box.textContent = text.slice(0, ++i); if (i >= text.length) clearInterval(vendorSay.typer); }, 28);
+  vendor.talking = true;
+  clearTimeout(vendorSay.stop);
+  const fallbackMs = Math.min(9000, 400 + text.length * 60);
+  if (vendor.voice && window.speechSynthesis) {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice(); if (v) u.voice = v;
+    u.rate = 1.05; u.pitch = 0.85;
+    u.onend = () => { vendor.talking = false; };
+    speechSynthesis.speak(u);
+    vendorSay.stop = setTimeout(() => { vendor.talking = false; }, fallbackMs + 4000);
+  } else {
+    vendorSay.stop = setTimeout(() => { vendor.talking = false; }, fallbackMs);
+  }
+}
+
+function flash(id, ms) {
+  const el = $(id);
+  el.hidden = false;
+  clearTimeout(flash[id]);
+  flash[id] = setTimeout(() => { el.hidden = true; }, ms);
+}
+
+function countUp(el, target, ms) {
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ms);
+    el.textContent = "$" + Math.round(target * (1 - Math.pow(1 - t, 3))).toLocaleString();
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Hook the vendor into the existing live events, and add the walkout's strike event.
+const baseHandlers = { ...handlers };
+handlers.chat = (d) => {
+  baseHandlers.chat(d);
+  if (d.who === "vendor") vendorSay(d.text);
+};
+handlers.offer = (d) => {
+  baseHandlers.offer(d);
+  if (!vendor.moodUntil) setMood(d.price_cents >= 8000 ? "smug" : "nervous");
+};
+handlers.trap_check = (d) => {
+  baseHandlers.trap_check(d);
+  if (d.verdict === "reject") setMood("nervous");
+};
+handlers.strike = (d) => {
+  $("strike-text").textContent = d.text || "";
+  flash("strike", 5000);
+  setMood("panic", 9000);
+};
+handlers.tally = (d) => {
+  baseHandlers.tally(d);
+  setMood("defeated", 600000);
+  const price = state.offer ? state.offer.price_cents : 5800;
+  const yearly = Math.round(d.accepted * Math.max(0, 8500 - price) * 12 / 100);
+  $("savings-sub").textContent = `a year · ${d.accepted} members at $${dollars(price)}/mo instead of $85`;
+  flash("savings", 9000);
+  countUp($("savings-n"), yearly, 3500);
+};
+
 // --- presenter mode (P11) ----------------------------------------------
 // Hidden unless ?presenter=1. Keys 1–6 POST /demo/beat/{n}, R posts /demo/reset, which keeps
 // the real members in the room. ?hard=1 wipes real members and is never bound to a key.
@@ -431,6 +609,8 @@ function clearRun() {
   state.chat = [];
   state.trap = null;
   state.tally = null;
+  setMood("smug");
+  $("bubble-text").textContent = "…";
 }
 
 async function trigger(path, label, nextBeat, onOk) {
@@ -462,6 +642,14 @@ function onPresenterKey(ev) {
     const n = Number(ev.key);
     ev.preventDefault();
     trigger(`/demo/beat/${n}`, `beat ${n}`, Math.min(n + 1, 6));
+  } else if (ev.key === "w" || ev.key === "W") {
+    ev.preventDefault();
+    trigger("/demo/beat/7", "walkout", state.presenter.next);
+  } else if (ev.key === "v" || ev.key === "V") {
+    vendor.voice = !vendor.voice;
+    if (!vendor.voice && window.speechSynthesis) speechSynthesis.cancel();
+    state.presenter.status = "vendor voice " + (vendor.voice ? "on" : "off");
+    renderPresenter();
   } else if (ev.key === "r" || ev.key === "R") {
     ev.preventDefault();
     trigger("/demo/reset", "reset", 1, clearRun);  // soft reset only: real members survive

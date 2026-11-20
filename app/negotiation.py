@@ -27,6 +27,13 @@ RELAY_URL = os.environ.get("RELAY_URL", "http://localhost:8077")
 SEED_TARGET = int(os.environ.get("DEMO_SEED_MEMBERS", "300"))
 ATTACK_SIZE = int(os.environ.get("DEMO_ATTACK_SIZE", "500"))
 TRAP_PAUSE_SECONDS = float(os.environ.get("DEMO_TRAP_PAUSE", "8"))
+STRIKE_SECONDS = float(os.environ.get("DEMO_STRIKE_SECONDS", "5"))
+WALKOUT_DISCOUNT_CENTS = 200
+_concessions: dict[str, int] = {}  # coalition_id -> cents off the curve won by a walkout
+
+
+def quote(cid: str, n: int) -> int:
+    return max(3800, price_for(n) - _concessions.get(cid, 0))
 _running = threading.Lock()
 
 TRAP_TERMS = ("$58/month for the first 3 months (introductory rate), then $95/month standard rate. "
@@ -122,19 +129,19 @@ def beat2(cid: str) -> None:
     while True:
         n = _s().counts(cid)["verified"]
         if n != last and n > 0 and (n - last >= 60 or (proc and proc.poll() is not None)):
-            offer(cid, price_for(n), f"Volume quote for {n} verified lines, 12-month term.")
+            offer(cid, quote(cid, n), f"Volume quote for {n} verified lines, 12-month term.")
             last = n
         if not proc or proc.poll() is not None:
             break
         time.sleep(1.5)
     n = _s().counts(cid)["verified"]
     if n != last:
-        offer(cid, price_for(n), f"Volume quote for {n} verified lines, 12-month term.")
+        offer(cid, quote(cid, n), f"Volume quote for {n} verified lines, 12-month term.")
     chat(cid, "coalition", say("coalition", f"{n} verified members want a phone plan under $60. Ask for a volume price.",
                                f"{n} verified members want a plan under $60. What's your volume price?"))
-    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Quote {dollars(price_for(n))} per phone line per month "
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Quote {dollars(quote(cid, n))} per phone line per month "
                                       f"for {n} verified people, 12-month term.",
-                            f"For {n} verified lines, {dollars(price_for(n))} a month on a 12-month term."))
+                            f"For {n} verified lines, {dollars(quote(cid, n))} a month on a 12-month term."))
 
 
 def beat3(cid: str) -> None:
@@ -164,10 +171,10 @@ def beat4(cid: str) -> None:
     record_system(cid, "verification", removed=len(removed))
     n = _s().counts(cid)["verified"]
     chat(cid, "persona", f"{n} verified unique humans. {len(removed)} removed: no verified identity.")
-    offer(cid, price_for(n), f"Volume quote for {n} verified lines, 12-month term.")
+    offer(cid, quote(cid, n), f"Volume quote for {n} verified lines, 12-month term.")
     chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Accept that {n} verified people each want one phone line; "
-                                      f"your quote stays {dollars(price_for(n))} per line per month.",
-                            f"{n} verified lines. {dollars(price_for(n))} stands."))
+                                      f"your quote stays {dollars(quote(cid, n))} per line per month.",
+                            f"{n} verified lines. {dollars(quote(cid, n))} stands."))
     chat(cid, "system", "Fakes removed. The price is back where real people put it.")
 
 
@@ -215,7 +222,27 @@ def beat6(cid: str) -> None:
                         f"Each saves {dollars(8500 - price)} a month. Check it yourself at /verify.html.")
 
 
-BEATS = {1: beat1, 2: beat2, 3: beat3, 4: beat4, 5: beat5, 6: beat6}
+def walkout(cid: str) -> None:
+    """The coalition walks out on the vendor. Every member's phone shows the strike; the vendor caves.
+
+    The vendor's concession is part of its published rules: a coalition that walks to a competitor
+    gets WALKOUT_DISCOUNT_CENTS off the curve. It sticks for the rest of this run.
+    """
+    n = _s().counts(cid)["verified"]
+    chat(cid, "system", "Walkout · The coalition takes its lines to a competitor.")
+    chat(cid, "coalition", f"{n} verified members are taking their lines to a competitor. Strike.")
+    bus.publish(cid, "strike", {"text": f"{n} members walked out on Northline Mobile", "members": n})
+    record_system(cid, "walkout", members=n)
+    time.sleep(STRIKE_SECONDS)  # let the room's phones sit on the strike screen
+    _concessions[cid] = WALKOUT_DISCOUNT_CENTS
+    price = quote(cid, n)
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. {n} customers just walked out to a competitor. "
+                                      f"Panic a little and beg them back with {dollars(price)} per line per month.",
+                            f"Wait, wait! Don't go. {dollars(price)} a line, final answer."))
+    offer(cid, price, f"Retention offer for {n} verified lines after walkout, 12-month term.")
+
+
+BEATS = {1: beat1, 2: beat2, 3: beat3, 4: beat4, 5: beat5, 6: beat6, 7: walkout}
 
 
 def _run(n: int, cid: str) -> None:
@@ -231,7 +258,7 @@ def _run(n: int, cid: str) -> None:
 @router.post("/demo/beat/{n}")
 def run_beat(n: int, c: str = DEMO_COALITION_ID):
     if n not in BEATS:
-        raise HTTPException(404, "Beats are 1 to 6.")
+        raise HTTPException(404, "Beats are 1 to 7 (7 is the walkout).")
     if not _s().get_coalition(c):
         raise HTTPException(404, f"Unknown coalition {c}")
     if not _running.acquire(blocking=False):
@@ -246,6 +273,7 @@ def reset(c: str = DEMO_COALITION_ID, hard: int = 0):
     if not s.get_coalition(c):
         s.create_coalition(DEMO_COALITION_NEED if c == DEMO_COALITION_ID else c, c)
     s.reset(c, hard=bool(hard))
+    _concessions.pop(c, None)
     secrets = ROOT / "members_secrets.json"
     if secrets.exists():
         secrets.unlink()  # simulated members' secrets are stale once they're removed
