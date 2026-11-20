@@ -666,7 +666,8 @@ function takeSlot() {
 function addDot(kind, verified, agentId, pulse) {
   const slot = takeSlot();
   if (slot < 0) return null;  // at the cap: the counts keep counting, the floor stops filling
-  const dot = { slot, x: 0, y: 0, kind, verified, pulseAt: pulse && !REDUCED ? performance.now() : 0, doomed: false, dissolveAt: 0 };
+  const dot = { slot, x: 0, y: 0, kind, verified, agentId: agentId || null, known: !!agentId,
+    pulseAt: pulse && !REDUCED ? performance.now() : 0, doomed: false, dissolveAt: 0 };
   placeDot(dot);
   floor.dots.push(dot);
   if (agentId) floor.byAgent.set(agentId, dot);
@@ -677,6 +678,7 @@ function dropDot(dot) {
   const at = floor.dots.indexOf(dot);
   if (at < 0) return;
   floor.dots.splice(at, 1);
+  if (dot.agentId) floor.byAgent.delete(dot.agentId);
   floor.freeSlots.push(dot.slot);
   floor.freeSlots.sort((a, b) => b - a);
 }
@@ -699,28 +701,30 @@ function removeDot(agentId) {
 // first, since that is who beat 3 adds without a Persona inquiry.
 function reconcileFloor() {
   const c = state.counts;
-  const real = Math.min(c.real, FLOOR_CAP);
-  const sim = Math.min(c.simulated, FLOOR_CAP - real);
-  const simUnverified = Math.min(c.unverified, sim);
-  const realUnverified = Math.min(real, Math.max(0, c.unverified - simUnverified));
+  // A dot that came from a member_joined event knows its own client and Persona state. The counts
+  // only say how many of each kind exist, so they fill in the members we never saw join and never
+  // overrule an event: a real member still waiting on Persona stays a red real dot even while the
+  // simulated crowd around it is verified.
+  const known = { "real:1": 0, "real:0": 0, "sim:1": 0, "sim:0": 0 };
+  const filler = { "real:1": [], "real:0": [], "sim:1": [], "sim:0": [] };
+  for (const dot of floor.dots) {
+    if (dot.doomed) continue;
+    const key = `${dot.kind}:${dot.verified ? 1 : 0}`;
+    if (dot.known) known[key]++; else filler[key].push(dot);
+  }
+  const real = Math.max(0, Math.min(c.real, FLOOR_CAP) - known["real:1"] - known["real:0"]);
+  const sim = Math.max(0, Math.min(c.simulated, Math.max(0, FLOOR_CAP - c.real)) - known["sim:1"] - known["sim:0"]);
+  const unverified = Math.max(0, c.unverified - known["real:0"] - known["sim:0"]);
+  const simUnverified = Math.min(unverified, sim);
+  const realUnverified = Math.min(real, unverified - simUnverified);
   const want = {
     "real:1": real - realUnverified, "real:0": realUnverified,
     "sim:1": sim - simUnverified, "sim:0": simUnverified
   };
-  const have = { "real:1": 0, "real:0": 0, "sim:1": 0, "sim:0": 0 };
-  const alive = [];
-  for (const dot of floor.dots) {
-    if (dot.doomed) continue;
-    have[`${dot.kind}:${dot.verified ? 1 : 0}`]++;
-    alive.push(dot);
-  }
   for (const key of Object.keys(want)) {
     const [kind, verified] = key.split(":");
-    for (let i = have[key]; i < want[key]; i++) addDot(kind, verified === "1", null, false);
-    for (let i = have[key]; i > want[key]; i--) {
-      const extra = alive.find((d) => !d.doomed && d.kind === kind && d.verified === (verified === "1"));
-      if (extra) { extra.doomed = true; dropDot(extra); }
-    }
+    for (let i = filler[key].length; i < want[key]; i++) addDot(kind, verified === "1", null, false);
+    for (let i = filler[key].length; i > want[key]; i--) dropDot(filler[key].pop());
   }
 }
 
