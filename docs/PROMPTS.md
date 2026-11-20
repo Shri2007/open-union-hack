@@ -9,7 +9,7 @@ Paste these in order starting at 11:00. Every prompt points the tool at `docs/CO
 - **Cursor**: quick visual fixes while you review.
 - **Ali**: anything he picks up is a bonus. Nothing depends on him.
 
-**Before each prompt:** `cd ~/hackathons/open-union && source ~/hackathons/union-env/bin/activate`
+**Before each prompt:** `cd ~/hackathons/open-union-hack && source ~/hackathons/union-env/bin/activate`
 
 **After each done-check passes:** commit (`git add -A && git commit -m "<step>"`) so you can always roll back.
 
