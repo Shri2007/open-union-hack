@@ -87,6 +87,16 @@ def get_log(coalition_id: str = DEMO_COALITION_ID):
     return _store().log(coalition_id)
 
 
+@router.get("/coalitions/{coalition_id}/latest")
+def get_latest(coalition_id: str):
+    """State, newest offer and newest walkout: lets a phone catch up if its live stream stalls."""
+    s = _store()
+    coalition = s.get_coalition(coalition_id)
+    if not coalition:
+        raise HTTPException(404, f"Unknown coalition {coalition_id}")
+    return {"state": coalition["state"], **s.latest(coalition_id)}
+
+
 @router.get("/coalitions/{coalition_id}")
 def get_coalition(coalition_id: str):
     s = _store()

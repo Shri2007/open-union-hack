@@ -442,43 +442,78 @@ function showOffer() {
   }
 }
 
+let lastStrikeId = null;
+let shownClosed = false;
+
+// One handler for offers from the live stream or from polling; an offer id is handled once.
+function onOffer(offer) {
+  if (lastOffer && lastOffer.offer_id === offer.offer_id) return;
+  lastOffer = offer;
+  const accept = offer.price_cents <= member.price_cents;  // decided here, from the price the relay can't see
+  $("v-offer").textContent = dollars(offer.price_cents) + "/month — " + (accept ? "within your limit" : "above your limit");
+  if (strikeTimer === null && !shownClosed) showOffer();
+  logLine("offer " + dollars(offer.price_cents) + "; responding accept=" + accept);
+  send(member.coalition_id, member.agent_id, "RESPOND", { offer_id: offer.offer_id, accept })
+    .catch((e) => logLine("RESPOND failed: " + e.message));
+}
+
+let lastStrikeShownAt = 0;
+
+function onStrike(text) {
+  lastStrikeShownAt = Date.now();
+  clearTimeout(strikeTimer);
+  setRoom("strike", "", "✊ ON STRIKE", text);
+  strikeTimer = setTimeout(() => {
+    strikeTimer = null;
+    if (!shownClosed) showOffer();
+  }, 6000);
+}
+
 function listen() {
+  if (stream) stream.close();
   stream = new EventSource("/stream?coalition_id=" + encodeURIComponent(member.coalition_id));
-  stream.addEventListener("offer", (ev) => {
-    const offer = JSON.parse(ev.data);
-    lastOffer = offer;
-    const accept = offer.price_cents <= member.price_cents;  // decided here, from the price the relay can't see
-    $("v-offer").textContent = dollars(offer.price_cents) + "/month — " + (accept ? "within your limit" : "above your limit");
-    if (strikeTimer === null) showOffer();
-    logLine("offer " + dollars(offer.price_cents) + "; responding accept=" + accept);
-    send(member.coalition_id, member.agent_id, "RESPOND", { offer_id: offer.offer_id, accept })
-      .catch((e) => logLine("RESPOND failed: " + e.message));
-  });
+  stream.addEventListener("offer", (ev) => onOffer(JSON.parse(ev.data)));
   stream.addEventListener("strike", (ev) => {
-    const strike = JSON.parse(ev.data);
-    clearTimeout(strikeTimer);
-    setRoom("strike", "", "✊ ON STRIKE", strike.text);
-    strikeTimer = setTimeout(() => {
-      strikeTimer = null;
-      showOffer();
-    }, 6000);
+    const s = JSON.parse(ev.data);
+    lastStrikeId = "stream-" + Date.now();
+    onStrike(s.text);
   });
   stream.addEventListener("tally", (ev) => { tally = JSON.parse(ev.data); });
 }
 
+// Polling backs up the live stream (a phone network or tunnel can stall it), and never stops,
+// so a phone keeps working across a closed run and a reset.
 async function poll() {
   try {
-    const coalition = await api("/coalitions/" + encodeURIComponent(member.coalition_id));
-    if (coalition.state === "closing" && !member.revealed) await reveal();
-    if (coalition.state === "closed") {
+    const latest = await api("/coalitions/" + encodeURIComponent(member.coalition_id) + "/latest");
+    if (latest.offer) onOffer(latest.offer);
+    // A strike the live stream already showed is skipped; polling only covers a stream that missed it.
+    if (latest.strike && latest.strike.id !== lastStrikeId && latest.strike.age_s < 12
+        && Date.now() - lastStrikeShownAt > 15000) {
+      lastStrikeId = latest.strike.id;
+      onStrike((latest.strike.members || "") + " members walked out on Northline Mobile");
+    }
+    if (latest.state === "closing" && !member.revealed) await reveal();
+    if (latest.state === "closed" && !shownClosed) {
+      shownClosed = true;
       await showMemberCard();
-      stream.close();
-      return;
+    }
+    if (latest.state === "open" && (shownClosed || member.revealed)) {
+      // The coalition was reset for a new run: this member is still in it, with the same sealed limit.
+      logLine("new run started: back to live offers");
+      shownClosed = false;
+      member.revealed = false;
+      tally = null;
+      lastOffer = null;
+      persist();
+      show("s-joined");
+      if (!stream || stream.readyState === 2) listen();
+      setRoom("");
     }
   } catch (e) {
     logLine("status check failed: " + e.message);
   }
-  setTimeout(poll, 4000);
+  setTimeout(poll, 3000);
 }
 
 async function reveal() {

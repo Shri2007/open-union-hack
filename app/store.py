@@ -124,6 +124,22 @@ class Store:
         return _row(r) if r else None
 
 
+    def latest(self, cid: str) -> dict:
+        """The newest offer and walkout, for phones that poll instead of (or as well as) streaming."""
+        offer = self._q("SELECT id, body FROM log WHERE coalition_id=%s AND type='OFFER' ORDER BY ts DESC LIMIT 1",
+                        (cid,), "one")
+        strike = self._q("SELECT ts, body FROM log WHERE coalition_id=%s AND type='SYSTEM' "
+                         "AND JSON_EXTRACT_STRING(body, 'kind')='walkout' ORDER BY ts DESC LIMIT 1", (cid,), "one")
+        out = {"offer": None, "strike": None}
+        if offer:
+            b = json.loads(offer[1]) if isinstance(offer[1], (str, bytes)) else offer[1]
+            out["offer"] = {"offer_id": offer[0], "price_cents": b["price_cents"], "terms_text": b["terms_text"]}
+        if strike:
+            b = json.loads(strike[1]) if isinstance(strike[1], (str, bytes)) else strike[1]
+            age = (_now() - strike[0]).total_seconds()
+            out["strike"] = {"id": strike[0].isoformat(), "members": b.get("members"), "age_s": round(age, 1)}
+        return out
+
     # demo control
     def remove_unverified(self, cid: str, reason: str) -> list[str]:
         """Removes every current member who isn't verified. Returns their agent ids."""
