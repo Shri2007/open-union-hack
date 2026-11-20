@@ -36,7 +36,14 @@ class CallbackIn(BaseModel):
 
 
 def _mode() -> str:
-    return LIVE_MODE if config.PERSONA_API_KEY else STUB_MODE
+    # Live needs both: without a template the join page has no flow to open.
+    return LIVE_MODE if (config.PERSONA_API_KEY and config.PERSONA_TEMPLATE_ID) else STUB_MODE
+
+
+def _environment() -> str:
+    """Persona sandbox does no real identity check, so the log and chat must say which one this is."""
+    key = config.PERSONA_API_KEY
+    return "sandbox" if key.startswith("persona_sandbox") else "production" if key.startswith("persona_production") else "unknown"
 
 
 def _dig(value: Any, *keys: str) -> Any:
@@ -68,8 +75,8 @@ def _reference(body: CallbackIn) -> tuple[str | None, str | None]:
     return body.coalition_id, body.agent_id
 
 
-def fetch_inquiry_status(inquiry_id: str) -> str:
-    """Ask Persona for the inquiry's current status. Tests replace this function with a fake."""
+def fetch_inquiry(inquiry_id: str) -> dict:
+    """Ask Persona itself for the inquiry: {status, reference_id}. Tests replace this function with a fake."""
     try:
         response = httpx.get(
             f"{PERSONA_API}/{inquiry_id}",
@@ -78,8 +85,13 @@ def fetch_inquiry_status(inquiry_id: str) -> str:
                      "Key-Inflection": "kebab"},
             timeout=TIMEOUT_SECONDS,
         )
+        if response.status_code == 401:
+            raise HTTPException(502, "Persona rejected PERSONA_API_KEY (HTTP 401)")
         response.raise_for_status()
-        return str(response.json()["data"]["attributes"]["status"]).lower()
+        attrs = response.json()["data"]["attributes"]
+        return {"status": str(attrs["status"]).lower(), "reference_id": attrs.get("reference-id")}
+    except HTTPException:
+        raise
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(502, f"Persona inquiry lookup failed: {type(exc).__name__}") from exc
 
@@ -88,6 +100,7 @@ def fetch_inquiry_status(inquiry_id: str) -> str:
 def persona_config() -> dict:
     """What the join page needs to start verification: live hosted flow, or the sandbox stub."""
     return {"mode": _mode(),
+            "environment": "stub" if _mode() == STUB_MODE else _environment(),
             "template_id": config.PERSONA_TEMPLATE_ID or None,
             "hosted_flow_url": HOSTED_FLOW_URL}
 
@@ -111,18 +124,27 @@ def persona_callback(body: CallbackIn) -> dict:
         # No Persona key on this relay: label the stub everywhere it shows up.
         status, inquiry_id = STUB_MODE, inquiry_id or STUB_MODE
     else:
-        status = (body.status or _dig(body.model_extra or {}, "status") or "").lower()
-        if status not in PASSED_STATUSES:
-            if not inquiry_id:
-                raise HTTPException(422, "inquiry_id is required when Persona is configured.")
-            status = fetch_inquiry_status(str(inquiry_id))
+        # Never trust a status sent by the browser or a webhook body: ask Persona itself, every time.
+        if not inquiry_id:
+            raise HTTPException(422, "inquiry_id is required when Persona is configured.")
+        inquiry = fetch_inquiry(str(inquiry_id))
+        status = inquiry["status"]
+        if inquiry["reference_id"] != f"{cid}:{agent_id}":
+            raise HTTPException(403, "This inquiry belongs to a different member.")
+        for row in store.log(cid):  # one inquiry, one member: stops one ID backing many accounts
+            b = row["body"]
+            if (row["type"] == "SYSTEM" and b.get("kind") == "persona_check" and b.get("verified")
+                    and b.get("inquiry_id") == str(inquiry_id) and b.get("agent_id") != agent_id):
+                raise HTTPException(409, "This inquiry already verified another member.")
 
     verified = mode == STUB_MODE or status in PASSED_STATUSES
     if verified:
         store.set_verified(cid, agent_id, True)
+    env = "stub" if mode == STUB_MODE else _environment()
     relay.record_system(cid, "persona_check", agent_id=agent_id, inquiry_id=inquiry_id,
-                        status=status, mode=mode, verified=verified)
-    label = " (sandbox stub, not a real identity check)" if mode == STUB_MODE else ""
+                        status=status, mode=mode, environment=env, verified=verified)
+    label = (" (sandbox stub, not a real identity check)" if mode == STUB_MODE
+             else " (Persona sandbox, not a real identity check)" if env == "sandbox" else "")
     bus.publish(cid, "chat", {"who": "persona",
                               "text": (f"{agent_id} is a verified unique human{label}." if verified
                                        else f"{agent_id} is not verified: inquiry {status}.")})
