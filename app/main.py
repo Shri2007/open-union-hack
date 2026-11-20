@@ -1,9 +1,11 @@
 """Open Union relay: one FastAPI app that serves the API and the web pages."""
+import io
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from app import config, db
@@ -48,6 +50,34 @@ app.include_router(offer_check_router)
 @app.get("/health")
 def health():
     return {"ok": True, "db": db.ping()}
+
+
+def public_url() -> str:
+    """The address phones can reach: PUBLIC_URL, else the tunnel link saved in demo/TUNNEL_URL.txt."""
+    url = os.environ.get("PUBLIC_URL", "").strip()
+    saved = Path(__file__).resolve().parent.parent / "demo" / "TUNNEL_URL.txt"
+    if not url and saved.exists():
+        url = saved.read_text().strip()
+    return url.rstrip("/")
+
+
+@app.get("/join-qr.svg")
+def join_qr():
+    """A QR code for the phone join page, so the whole room can scan it off the stage screen."""
+    import qrcode
+    import qrcode.image.svg
+    base = public_url()
+    if not base:
+        return Response(status_code=404)
+    img = qrcode.make(f"{base}/join.html", image_factory=qrcode.image.svg.SvgPathFillImage, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    return Response(buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/public-url")
+def get_public_url():
+    return {"url": public_url()}
 
 
 # Mounted last so API routes win over static files.
