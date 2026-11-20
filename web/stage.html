@@ -159,7 +159,9 @@ const state = {
 };
 
 const $ = (id) => document.getElementById(id);
-const dollars = (cents) => (cents / 100).toFixed(0);
+// Whole dollars read better from the back of a room, but cents are shown when an offer or a
+// revealed limit has them, so $58.40 and $58.00 never look like the same number.
+const dollars = (cents) => (cents / 100).toFixed(cents % 100 === 0 ? 0 : 2);
 const isSimulated = (client) => client === "firedrill" || client === "simulated-attack";
 
 function post(path) {
@@ -172,17 +174,23 @@ function post(path) {
 // emitting any event, and it must not take the real members down with them.
 const COUNT_KEYS = ["verified", "unverified", "removed", "real", "simulated"];
 
+let memberEventSeq = 0;  // bumped by every member event, so a stale snapshot can be spotted
+
 function bump(key, by) {
   state.delta[key] += by;
   state.counts[key] = Math.max(0, state.baseline[key] + state.delta[key]);
 }
 
 async function pollCounts() {
+  const seqAtRequest = memberEventSeq;
   try {
     const res = await fetch(`/coalitions/${encodeURIComponent(COALITION_ID)}`);
     if (!res.ok) return;
     const data = await res.json();
     state.need = data.need || state.need;
+    // A member event that landed while the request was in flight may or may not be in this
+    // snapshot, so keep the live numbers and take a fresh snapshot instead of going backwards.
+    if (memberEventSeq !== seqAtRequest) return render();
     state.baseline = data.counts;
     for (const key of COUNT_KEYS) {
       state.delta[key] = 0;
@@ -300,11 +308,13 @@ function esc(v) {
 // --- live events -------------------------------------------------------
 const handlers = {
   member_joined(d) {
+    memberEventSeq++;
     state.clients.set(d.agent_id, d.client);
     bump(d.verified ? "verified" : "unverified", 1);
     bump(isSimulated(d.client) ? "simulated" : "real", 1);
   },
   member_removed(d) {
+    memberEventSeq++;
     // Persona removes members whose inquiry never passed, so a removal comes out of "unverified".
     bump("removed", 1);
     bump("unverified", -1);
