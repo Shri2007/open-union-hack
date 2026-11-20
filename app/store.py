@@ -50,10 +50,11 @@ class Store:
         return cid
 
     def nearest_coalitions(self, need: str, limit: int = 5) -> list[dict]:
-        """SQL filter plus vector search in one query: open coalitions ranked by similarity to the need."""
+        """Vector search in SQL: coalitions ranked by similarity to the need. A closed coalition still matches:
+        anyone who joins between runs is in it, and a reset reopens it for the next run with them kept."""
         rows = self._q(
             "SELECT id, need, state, embedding <*> (%s :> VECTOR(384, F32)) AS score FROM coalitions "
-            "WHERE state = 'open' AND embedding IS NOT NULL ORDER BY score DESC LIMIT %s",
+            "WHERE embedding IS NOT NULL ORDER BY score DESC LIMIT %s",
             (to_sql(embed(need)), limit), "all")
         return [{"id": r[0], "need": r[1], "state": r[2], "score": round(float(r[3]), 3)} for r in rows]
 
