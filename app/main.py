@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     try:
         db.create_tables()
         store.create_coalition(DEMO_COALITION_NEED, DEMO_COALITION_ID)
+        store.backfill_embeddings()
         log.info("database tables ready, demo coalition %s", DEMO_COALITION_ID)
     except Exception as exc:  # keep serving so /health can report the problem
         log.error("database setup failed: %s", type(exc).__name__)

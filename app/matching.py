@@ -61,10 +61,14 @@ def match(body: MatchIn) -> dict:
         raise HTTPException(422, "need must not be blank")
 
     best_id, best_p = None, 0.0
-    for candidate in store.list_coalitions(MAX_CANDIDATES):
+    # SingleStore vector search shortlists the closest open coalitions; TypeSafe then judges each one.
+    nearest = getattr(store, "nearest_coalitions", None)
+    candidates = nearest(need, MAX_CANDIDATES) if nearest else store.list_coalitions(MAX_CANDIDATES)
+    for candidate in candidates:
         state = {"member": {"need": need}, "coalition": {"need": candidate["need"]}}
         p = ask_typesafe(state)
-        relay.record_system(candidate["id"], "match_question", question=QUESTION, state=state, p=p)
+        relay.record_system(candidate["id"], "match_question", question=QUESTION, state=state, p=p,
+                            vector_score=candidate.get("score"))
         if p > best_p:
             best_id, best_p = candidate["id"], p
 

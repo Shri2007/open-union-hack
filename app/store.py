@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from app import db
+from app.embed import embed, to_sql
 
 
 def _now() -> datetime:
@@ -45,9 +46,24 @@ class Store:
 
     def create_coalition(self, need: str, cid: str | None = None) -> str:
         cid = cid or str(uuid.uuid4())
-        self._q("INSERT IGNORE INTO coalitions (id, need, state, created_at) VALUES (%s, %s, 'open', %s)",
-                (cid, need, _now()))
+        self._q("INSERT IGNORE INTO coalitions (id, need, state, created_at, embedding) "
+                "VALUES (%s, %s, 'open', %s, %s)", (cid, need, _now(), to_sql(embed(need))))
         return cid
+
+    def nearest_coalitions(self, need: str, limit: int = 5) -> list[dict]:
+        """SQL filter plus vector search in one query: open coalitions ranked by similarity to the need."""
+        rows = self._q(
+            "SELECT id, need, state, embedding <*> (%s :> VECTOR(384, F32)) AS score FROM coalitions "
+            "WHERE state = 'open' AND embedding IS NOT NULL ORDER BY score DESC LIMIT %s",
+            (to_sql(embed(need)), limit), "all")
+        return [{"id": r[0], "need": r[1], "state": r[2], "score": round(float(r[3]), 3)} for r in rows]
+
+    def backfill_embeddings(self) -> int:
+        """Re-embeds every coalition on startup, so a change to app/embed.py never leaves stale vectors."""
+        rows = self._q("SELECT id, need FROM coalitions", (), "all")
+        for cid, need in rows:
+            self._q("UPDATE coalitions SET embedding=%s WHERE id=%s", (to_sql(embed(need)), cid))
+        return len(rows)
 
     def set_state(self, cid: str, state: str) -> None:
         self._q("UPDATE coalitions SET state=%s WHERE id=%s", (state, cid))

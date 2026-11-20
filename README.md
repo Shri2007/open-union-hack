@@ -34,7 +34,7 @@ The protocol is six messages (`INTENT`, `JOIN`, `COMMIT`, `OFFER`, `RESPOND`, `R
 | **Senso** | Retrieves the plan terms that match an offer (`app/offer_check.py`); the three best chunks are cited by `content_id`, `version_id` and score in the log. The knowledge base holds the fictional carrier's terms. |
 | **TypeSafe** | Gives the probabilities: whether two needs are the same service (`app/matching.py`) and the three trap questions (`app/offer_check.py`). Thresholds are applied in code. |
 | **Persona** | Verifies a member is a unique human before they count toward the headcount (`app/persona.py`). The relay asks Persona itself and never trusts a status sent by the browser. |
-| **SingleStore** | Stores the public log, coalitions and members (`app/db.py`, `app/store.py`). |
+| **SingleStore** | Stores the public log, coalitions and members (`app/db.py`, `app/store.py`), and runs SQL plus vector search in one query: each coalition's need is a `VECTOR(384)` embedding, and `nearest_coalitions` ranks open coalitions by similarity (`<*>`) to a new member's need. That shortlist goes to TypeSafe, which judges each candidate (`app/matching.py`). |
 | **Arcee** | Writes the short vendor and coalition lines on the stage screen (`app/vendor.py`), with Anthropic as a fallback. It never sets a price. |
 | **Firedrill** | Two simulation recipes against the relay's HTTP API, a sign-up attack and a set of trap offers (`firedrill/`, see [firedrill/README.md](firedrill/README.md)). |
 

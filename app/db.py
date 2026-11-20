@@ -24,6 +24,7 @@ TABLES = [
         need TEXT NOT NULL,
         state VARCHAR(16) NOT NULL DEFAULT 'open',
         created_at DATETIME(6) NOT NULL,
+        embedding VECTOR(384, F32) NULL,
         PRIMARY KEY (id)
     )
     """,
@@ -72,6 +73,11 @@ def create_tables() -> None:
     with connect() as conn, conn.cursor() as cur:
         for ddl in TABLES:
             cur.execute(ddl)
+        # Tables made before vector search existed: add the column once.
+        cur.execute("SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema = DATABASE() AND table_name = 'coalitions' AND column_name = 'embedding'")
+        if cur.fetchone()[0] == 0:
+            cur.execute("ALTER TABLE coalitions ADD COLUMN embedding VECTOR(384, F32) NULL")
 
 
 def ping() -> bool:
