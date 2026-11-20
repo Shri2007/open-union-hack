@@ -3,94 +3,221 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B6B3A">
 <title>Open Union · Join a coalition</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: light;
+    --paper: #F3F7F4; --card: #FFFFFF; --ink: #11241A; --dim: #4B5F54;
+    --line: #C9D6CD; --line-strong: #1F3A2B;
+    --green: #0B6B3A; --green-press: #08532D; --green-tint: #D6F0DF; --green-faint: #E8F4EC;
+    --amber-bg: #FFF1C7; --amber-ink: #6B4500; --amber-line: #E0B64A;
+    --bad: #A3241A; --bad-bg: #FDECEA; --bad-line: #E9A29B; --bad-ink: #6F160F;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
   * { box-sizing: border-box; }
-  body {
-    margin: 0; padding: 20px 16px 48px; max-width: 560px;
-    background: #0b0e14; color: #e8ecf4;
-    font: 17px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
-  h1 { font-size: 1.4rem; margin: 0 0 6px; }
-  p.lead { color: #b9c4dc; margin: 0 0 20px; font-size: 0.95rem; }
-  label { display: block; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; margin: 16px 0 6px; }
-  input {
-    width: 100%; padding: 14px 12px; font-size: 17px; border-radius: 10px;
-    border: 1px solid #2a3550; background: #121829; color: #e8ecf4;
-  }
-  input:focus { outline: 2px solid #3b82f6; outline-offset: 1px; }
-  button {
-    width: 100%; margin-top: 16px; padding: 15px 14px; font-size: 17px; font-weight: 600;
-    border: none; border-radius: 10px; background: #2563eb; color: #fff;
-  }
-  button.stub { background: #3a2d10; color: #f0c674; border: 1px solid #6b5418; }
-  button.secondary { background: #1d2437; color: #c6d0e6; }
-  button[disabled] { opacity: 0.55; }
+  html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+  body { margin: 0; min-height: 100vh; color: var(--ink); background: var(--paper); font: 17px/1.5 var(--sans); }
+  ::selection { background: #BFE3CD; color: var(--ink); }
+
+  /* header band: the committed colour of the world */
+  .band { background: var(--green); color: #fff; padding: calc(env(safe-area-inset-top) + 14px) 0 14px; }
+  .band-inner { max-width: 520px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .wordmark { font-weight: 800; letter-spacing: .14em; text-transform: uppercase; font-size: .82rem; }
+  .demo { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border: 1.5px solid rgba(255,255,255,.75); border-radius: 4px; padding: 2px 7px; }
+
+  /* progress: three printed segments, standard and quiet */
+  .steps { max-width: 520px; margin: 14px auto 0; padding: 0 16px; list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .steps li { font-size: .75rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--dim); border-top: 4px solid var(--line); padding-top: 6px; transition: border-color .2s, color .2s; }
+  .steps li.done { border-color: var(--green); color: var(--ink); }
+  .steps li.current { border-color: var(--green); color: var(--green); }
+
+  main { max-width: 520px; margin: 0 auto; padding: 20px 16px 56px; }
+  h1 { font-size: 1.65rem; line-height: 1.15; font-weight: 800; letter-spacing: -.01em; margin: 0 0 8px; text-wrap: balance; }
+  p.lead { color: var(--dim); margin: 0 0 20px; font-size: .98rem; max-width: 62ch; }
+  body[data-step]:not([data-step="s-need"]) p.lead { display: none; }
   section { display: none; }
   section.on { display: block; }
-  .card { border: 1px solid #222c45; background: #111728; border-radius: 12px; padding: 14px; margin-top: 18px; }
-  .k { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; }
-  .v { font-size: 1.05rem; font-weight: 600; word-break: break-all; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82em; word-break: break-all; }
-  .tag { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 0.72rem; font-weight: 700; }
-  .tag.sandbox { background: #3a2d10; color: #f0c674; }
-  .tag.ok { background: #15361f; color: #6ee79b; }
-  .headline { font-size: 2rem; font-weight: 700; line-height: 1.15; margin: 4px 0; }
-  .headline.ok { color: #4ade80; }
-  .headline.bad { color: #f87171; }
-  .err { border: 1px solid #5a2126; background: #2a1316; color: #ffb4b4; border-radius: 10px; padding: 12px; margin-top: 16px; }
-  .note { border: 1px solid #2a3550; background: #121829; border-radius: 10px; padding: 10px 12px; margin-top: 14px; font-size: 0.88rem; color: #b9c4dc; }
-  #log { list-style: none; margin: 20px 0 0; padding: 0; font-size: 0.82rem; color: #8694b4; }
-  #log li { padding: 4px 0; border-top: 1px solid #1a2238; }
-  footer { margin-top: 26px; font-size: 0.78rem; color: #6f7d9c; }
+
+  /* the slip: one printed form, hairline rows, tiny corner labels */
+  .slip { background: var(--card); border: 2px solid var(--line-strong); border-radius: 6px; overflow: hidden; }
+  .cell { border-top: 1px solid var(--line); }
+  .cell:first-child { border-top: 0; }
+  .cell:focus-within { background: var(--green-faint); box-shadow: inset 0 0 0 3px var(--green); }
+  .cell label { display: block; padding: 10px 12px 0; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .cell input { display: block; width: 100%; border: 0; border-radius: 0; background: transparent; padding: 4px 12px 13px; font: 600 1.15rem/1.3 var(--sans); color: var(--ink); caret-color: var(--green); }
+  .cell input:focus, .cell input:focus-visible { outline: none; }
+  .cell input::placeholder { color: #5F7167; font-weight: 400; font-style: italic; }
+  .money { display: flex; align-items: baseline; padding-right: 12px; }
+  .money .unit { padding: 4px 0 13px 12px; font: 700 1.15rem/1.3 var(--sans); color: var(--dim); }
+  .money input { padding-left: 4px; font-variant-numeric: tabular-nums; }
+  .money .per { font-size: .85rem; font-weight: 600; color: var(--dim); white-space: nowrap; }
+  input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+  button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; margin-top: 16px; padding: 14px 16px; font: 700 1.05rem/1.2 var(--sans); border: 0; border-radius: 6px; background: var(--green); color: #fff; cursor: pointer; transition: background .15s, transform .15s; }
+  button:hover { background: var(--green-press); }
+  button:active { transform: scale(.985); }
+  button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  button[disabled] { background: #8FA79A; cursor: progress; }
+  button.stub { background: var(--amber-bg); color: var(--amber-ink); border: 2px solid var(--amber-line); }
+  button.stub:hover { background: #FFE9A8; }
+  button.secondary { background: var(--card); color: var(--ink); border: 2px solid var(--line-strong); }
+  #go::after, #verify-actions button:not(.stub)::after {
+    content: ""; width: 20px; height: 20px; flex: none;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  .row { padding: 11px 12px 12px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .k { font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-bottom: 3px; }
+  .v { font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
+  code { font-family: var(--mono); font-size: .84rem; font-weight: 600; letter-spacing: .02em; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+  .note { margin: 14px 0 0; padding: 10px 12px; border: 1px solid var(--line); background: var(--green-faint); border-radius: 6px; font-size: .92rem; color: var(--ink); }
+  .note:has(.tag.sandbox) { background: var(--amber-bg); border-color: var(--amber-line); color: var(--amber-ink); }
+  .tag { display: inline-block; border-radius: 4px; padding: 2px 8px; font-size: .72rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; vertical-align: 1px; }
+  #v-agent { display: inline-block; white-space: nowrap; font: 600 .9rem/1.3 var(--mono); margin-top: 4px; }
+  .tag.ok { background: var(--green-tint); color: #0B5A2F; }
+  .tag.sandbox { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-line); }
+  .err { margin-top: 14px; padding: 12px; border: 1.5px solid var(--bad-line); background: var(--bad-bg); color: var(--bad-ink); border-radius: 6px; font-weight: 600; }
+
+  /* the sealed receipt: serial, perforation, and the postmark that lands once */
+  .receipt-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 12px 16px; }
+  .receipt-top .serial { font: 800 1.5rem/1.1 var(--mono); letter-spacing: .06em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .perf { position: relative; height: 0; border-top: 2px dashed var(--line); }
+  .perf::before, .perf::after { content: ""; position: absolute; top: -12px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); border: 2px solid var(--line-strong); }
+  .perf::before { left: -13px; } .perf::after { right: -13px; }
+  .stamp { width: 104px; height: 104px; flex: none; color: var(--green); opacity: .92; transform: rotate(-9deg); mix-blend-mode: multiply; }
+  .stamp.land { animation: land .45s cubic-bezier(.2, 1.35, .4, 1) both; }
+  @keyframes land { from { opacity: 0; transform: rotate(-9deg) scale(1.5); } to { opacity: .92; transform: rotate(-9deg) scale(1); } }
+
+  .headline { font-size: 1.9rem; font-weight: 800; line-height: 1.15; margin: 2px 0; text-wrap: balance; }
+  .headline.ok { color: var(--green); }
+  .headline.bad { color: var(--bad); }
+  .detail { margin: 0; color: var(--ink); }
+
+  details.activity { margin-top: 24px; }
+  details.activity summary { cursor: pointer; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 0; }
+  details.activity summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  #log { list-style: none; margin: 6px 0 0; padding: 0; font: .78rem/1.4 var(--mono); color: var(--dim); }
+  #log li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  footer { margin-top: 22px; font-size: .8rem; color: var(--dim); max-width: 62ch; }
+
+  @media (min-width: 720px) { main { padding-top: 32px; } h1 { font-size: 1.9rem; } }
+  @media (prefers-reduced-motion: reduce) {
+    .stamp.land { animation: none; }
+    button, .steps li { transition: none; }
+  }
 </style>
 </head>
 <body>
+<header class="band">
+  <div class="band-inner">
+    <span class="wordmark">Open Union</span>
+    <span class="demo" title="Demo: simulated vendor, sandbox identity checks, nothing is bought">Demo</span>
+  </div>
+</header>
+<ol class="steps" id="steps" aria-label="Progress">
+  <li class="current" aria-current="step">Ask</li>
+  <li>Verify</li>
+  <li>Joined</li>
+</ol>
+
+<main>
 <h1>Join a coalition</h1>
 <p class="lead">Your limit never leaves this phone. We send only a sealed hash of it, and the number itself only when the deal closes.</p>
 
 <section id="s-need" class="on">
-  <label for="need">What do you want cheaper?</label>
-  <input id="need" type="text" inputmode="text" autocomplete="off" placeholder="phone plan under $60, Bay Area">
-  <label for="price">The most you'd pay per month</label>
-  <input id="price" type="number" inputmode="decimal" min="1" step="0.01" placeholder="60">
+  <div class="slip">
+    <div class="cell">
+      <label for="need">What do you want cheaper?</label>
+      <input id="need" type="text" inputmode="text" autocomplete="off" placeholder="phone plan under $60, Bay Area">
+    </div>
+    <div class="cell">
+      <label for="price">The most you'd pay per month</label>
+      <div class="money"><span class="unit" aria-hidden="true">$</span>
+        <input id="price" type="number" inputmode="decimal" min="1" step="0.01" placeholder="60">
+        <span class="per" aria-hidden="true">per month</span></div>
+    </div>
+  </div>
   <button id="go">Find my coalition</button>
 </section>
 
 <section id="s-verify">
-  <div class="card">
-    <div class="k">Coalition</div>
-    <div class="v" id="v-coalition">—</div>
-    <div class="k" style="margin-top:10px">Your sealed commitment</div>
-    <div class="v"><code id="v-commitment">—</code></div>
+  <div class="slip">
+    <div class="row">
+      <div class="k">Coalition</div>
+      <div class="v" id="v-coalition">—</div>
+    </div>
+    <div class="row">
+      <div class="k">Your sealed commitment</div>
+      <div class="v"><code id="v-commitment">—</code></div>
+    </div>
   </div>
   <p class="note">Only verified unique humans count toward the price. Verify once, then your agent joins.</p>
   <div id="verify-actions"></div>
 </section>
 
 <section id="s-joined">
-  <div class="card">
-    <div class="k">You're in</div>
-    <div class="v"><span id="v-verified" class="tag ok">verified</span> <span id="v-agent"></span></div>
-    <div class="k" style="margin-top:10px">Latest offer</div>
-    <div class="v" id="v-offer">waiting for the vendor…</div>
+  <div class="slip">
+    <div class="receipt-top">
+      <div>
+        <div class="k">You're in</div>
+        <div class="serial" id="r-serial">&nbsp;</div>
+        <div class="k" style="margin:4px 0 0">Sealed receipt</div>
+      </div>
+      <svg class="stamp" id="stamp" viewBox="0 0 120 120" role="img" aria-label="Postmark: limit sealed on this phone">
+        <defs><path id="stamp-ring" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0"/></defs>
+        <circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="3"/>
+        <circle cx="60" cy="60" r="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <text font-size="9.5" font-weight="800" fill="currentColor"><textPath href="#stamp-ring" textLength="268" lengthAdjust="spacing">OPEN UNION · LIMIT SEALED · </textPath></text>
+        <text x="60" y="58" text-anchor="middle" font-size="13" font-weight="800" fill="currentColor" id="r-date">NOV 20</text>
+        <text x="60" y="73" text-anchor="middle" font-size="8" font-weight="800" letter-spacing="1.6" fill="currentColor">SEALED</text>
+      </svg>
+    </div>
+    <div class="perf" aria-hidden="true"></div>
+    <div class="row">
+      <div class="k">Verification</div>
+      <div class="v"><span id="v-verified" class="tag ok">verified</span> <span id="v-agent"></span></div>
+    </div>
+    <div class="row">
+      <div class="k">Sealed commitment</div>
+      <div class="v"><code id="r-commit">—</code></div>
+    </div>
+    <div class="row">
+      <div class="k">Latest offer</div>
+      <div class="v" id="v-offer">waiting for the vendor…</div>
+    </div>
   </div>
   <p class="note" id="wait-note">Keep this page open. When the coalition closes, this phone reveals your price and re-checks the deal.</p>
 </section>
 
 <section id="s-closed">
-  <div class="headline" id="v-result"></div>
-  <p class="note" id="v-result-detail"></p>
+  <div class="slip">
+    <div class="row">
+      <div class="k">Result</div>
+      <div class="headline" id="v-result"></div>
+    </div>
+    <div class="row">
+      <div class="k">What happened</div>
+      <p class="detail" id="v-result-detail"></p>
+    </div>
+  </div>
 </section>
 
-<div id="err"></div>
-<ul id="log"></ul>
+<div id="err" role="alert" aria-live="polite"></div>
+<details class="activity">
+  <summary>Activity log</summary>
+  <ul id="log"></ul>
+</details>
 
 <footer>
   Your price and a 32-byte random salt stay in this browser's localStorage. The relay only ever sees
   <code>sha256("&lt;price_cents&gt;:&lt;salt_hex&gt;")</code> until the coalition reaches <code>closing</code>.
 </footer>
+</main>
 
 <script>
 const params = new URLSearchParams(location.search);
@@ -114,6 +241,33 @@ function showError(text) {
 }
 function show(id) {
   for (const s of document.querySelectorAll("section")) s.classList.toggle("on", s.id === id);
+  try { uiAfterShow(id); } catch (e) { console.warn("[open-union] ui", e); }
+}
+
+// ---- presentation only: progress steps, grouped hash, postmark. Never touches the flow. ----
+const STEP_ORDER = ["s-need", "s-verify", "s-joined"];
+const groupHash = (h) => (h.match(/.{1,8}/g) || [h]).join(" ");
+function uiAfterShow(id) {
+  document.body.dataset.step = id;
+  const at = id === "s-closed" ? STEP_ORDER.length : STEP_ORDER.indexOf(id);
+  document.querySelectorAll("#steps li").forEach((li, i) => {
+    li.classList.toggle("done", i < at);
+    li.classList.toggle("current", i === at);
+    if (i === at) li.setAttribute("aria-current", "step"); else li.removeAttribute("aria-current");
+  });
+  if (member && member.commitment) {
+    if (id === "s-verify") $("v-commitment").textContent = groupHash(member.commitment);
+    if (id === "s-joined") {
+      $("r-commit").textContent = groupHash(member.commitment);
+      $("r-serial").textContent = member.commitment.slice(0, 4).toUpperCase() + " " + member.commitment.slice(4, 8).toUpperCase();
+      $("r-date").textContent = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
+      const stamp = $("stamp");
+      stamp.classList.remove("land");
+      void stamp.getBoundingClientRect();  // restart the one animation
+      stamp.classList.add("land");
+    }
+  }
+  window.scrollTo(0, 0);
 }
 
 async function api(path, options) {
