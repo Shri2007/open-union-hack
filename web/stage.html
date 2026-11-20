@@ -80,6 +80,42 @@
   .yes { color: var(--good); }
   .no { color: var(--bad); }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; color: var(--dim); }
+
+  /* P11: every number big enough to read from 10 m. Labels stay small so the numbers lead. */
+  .stat .n { font-size: min(88px, 4.6vw); }
+  .price small { font-size: 40px; }
+  .terms { font-size: 22px; }
+  table { font-size: 24px; }
+  td.num { font-size: 26px; font-weight: 600; }
+  .verdict { font-size: 28px; }
+  .chat p { font-size: 24px; }
+  .conn { font-size: 20px; }
+
+  /* P11: presenter panel. Hidden unless ?presenter=1, so the projector never shows it. */
+  #presenter { display: none; }
+  body.presenter #presenter {
+    display: block; position: fixed; right: 18px; bottom: 18px; z-index: 10;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; min-width: 260px; box-shadow: 0 8px 28px rgba(0, 0, 0, .55);
+  }
+  #presenter h3 {
+    margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim);
+  }
+  #presenter ol { margin: 0; padding: 0; list-style: none; }
+  #presenter li {
+    display: flex; gap: 10px; align-items: baseline;
+    font-size: 15px; color: var(--dim); padding: 3px 6px; border-radius: 6px;
+  }
+  #presenter li b { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #presenter li.next { background: #11314a; color: var(--ink); }
+  #presenter li.next b { color: var(--accent); }
+  #presenter .reset {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line);
+    font-size: 15px; color: var(--dim);
+  }
+  #presenter .reset b { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-right: 10px; }
+  #presenter .status { margin-top: 8px; font-size: 13px; color: var(--dim); min-height: 17px; }
+  #presenter .status.err { color: var(--bad); }
 </style>
 </head>
 <body>
@@ -104,7 +140,7 @@
       <div class="stat"><div class="n" id="c-unverified">0</div><div class="k">unverified</div></div>
       <div class="stat removed"><div class="n" id="c-removed">0</div><div class="k">removed by Persona</div></div>
       <div class="stat"><div class="n" id="c-real">0</div><div class="k">real members</div></div>
-      <div class="stat simulated"><div class="n" id="c-simulated">0</div><div class="k">simulated</div></div>
+      <div class="stat simulated"><div class="n" id="c-simulated">0</div><div class="k">Firedrill members <span class="tag">simulated</span></div></div>
     </div>
   </section>
 </div>
@@ -132,6 +168,14 @@
     <div id="tally"><p class="empty">not closed yet</p></div>
   </section>
 </div>
+
+<!-- P11: presenter panel. CSS keeps it hidden unless the body has the .presenter class. -->
+<aside id="presenter">
+  <h3>Presenter <span class="tag">hotkeys</span></h3>
+  <ol id="beats"></ol>
+  <div class="reset" id="p-reset"><b>R</b> reset (keeps real members)</div>
+  <div class="status" id="p-status"></div>
+</aside>
 
 <script>
 // Stage screen for Open Union (docs/CONTRACT.md). One file, no build step, no dependencies.
@@ -220,6 +264,7 @@ function render() {
   renderChat();
   renderTrap();
   renderTally();
+  renderPresenter();
 }
 
 function renderChart() {
@@ -348,6 +393,70 @@ function connect() {
     });
   }
   return source;
+}
+
+// --- presenter mode (P11) ----------------------------------------------
+// Hidden unless ?presenter=1. Keys 1–6 POST /demo/beat/{n}, R posts /demo/reset, which keeps
+// the real members in the room. ?hard=1 wipes real members and is never bound to a key.
+const PRESENTER = new URLSearchParams(location.search).get("presenter") === "1";
+
+const BEATS = [
+  "solo ask",
+  "negotiation round",
+  "sybil attack (simulated)",
+  "verify with Persona",
+  "trap offer (sandbox)",
+  "close and reveal"
+];
+
+state.presenter = { next: 1, status: "", error: false };
+
+function renderPresenter() {
+  if (!PRESENTER) return;
+  $("beats").innerHTML = BEATS.map((label, i) => {
+    const n = i + 1;
+    return `<li class="${n === state.presenter.next ? "next" : ""}"><b>${n}</b>${esc(label)}</li>`;
+  }).join("");
+  const status = $("p-status");
+  status.textContent = state.presenter.status;
+  status.className = "status" + (state.presenter.error ? " err" : "");
+}
+
+async function trigger(path, label, nextBeat) {
+  state.presenter.status = `${label}…`;
+  state.presenter.error = false;
+  renderPresenter();
+  try {
+    const res = await post(path);
+    state.presenter.error = !res.ok;
+    state.presenter.status = res.ok ? `${label} ok` : `${label} failed (${res.status})`;
+    if (res.ok) state.presenter.next = nextBeat;
+  } catch (err) {
+    state.presenter.error = true;
+    state.presenter.status = `${label} failed (no relay)`;
+  }
+  renderPresenter();
+  pollCounts();
+}
+
+function onPresenterKey(ev) {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const tag = (ev.target && ev.target.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || (ev.target && ev.target.isContentEditable)) return;
+
+  if (ev.key >= "1" && ev.key <= "6") {
+    const n = Number(ev.key);
+    ev.preventDefault();
+    trigger(`/demo/beat/${n}`, `beat ${n}`, Math.min(n + 1, 6));
+  } else if (ev.key === "r" || ev.key === "R") {
+    ev.preventDefault();
+    trigger("/demo/reset", "reset", 1);  // soft reset only: real members survive
+  }
+}
+
+if (PRESENTER) {
+  document.body.classList.add("presenter");
+  window.addEventListener("keydown", onPresenterKey);
 }
 
 render();
