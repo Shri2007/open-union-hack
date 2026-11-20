@@ -3,8 +3,14 @@
 The join page opens Persona's hosted flow with PERSONA_TEMPLATE_ID and then posts here; Persona's own
 webhook can post here too. Either way a member is marked verified only when its inquiry is completed
 or approved. With no PERSONA_API_KEY the relay runs a clearly labeled sandbox stub instead.
+
+In live mode the relay never trusts a status or identity sent by the browser or a webhook body: it asks
+Persona itself for the inquiry, and the inquiry's reference-id must be this member's "<coalition>:<agent>".
+Persona, not this code, decides who is a unique human: turn on duplicate detection in the Persona template.
+A key set without a template is an error, never a silent fall back to the stub.
 """
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -35,15 +41,33 @@ class CallbackIn(BaseModel):
     model_config = {"extra": "allow"}
 
 
+INQUIRY_ID = re.compile(r"inq_[A-Za-z0-9]{1,64}")  # goes into a URL path next to our API key
+
+
 def _mode() -> str:
-    # Live needs both: without a template the join page has no flow to open.
-    return LIVE_MODE if (config.PERSONA_API_KEY and config.PERSONA_TEMPLATE_ID) else STUB_MODE
+    """Stub only when there is no key at all. A key without a template is a misconfiguration (503)."""
+    if config.PERSONA_API_KEY and not config.PERSONA_TEMPLATE_ID:
+        raise HTTPException(503, "PERSONA_TEMPLATE_ID is missing: PERSONA_API_KEY is set, so the stub is disabled.")
+    return LIVE_MODE if config.PERSONA_API_KEY else STUB_MODE
 
 
 def _environment() -> str:
     """Persona sandbox does no real identity check, so the log and chat must say which one this is."""
     key = config.PERSONA_API_KEY
     return "sandbox" if key.startswith("persona_sandbox") else "production" if key.startswith("persona_production") else "unknown"
+
+
+def _inquiry_id(body: "CallbackIn") -> Any:
+    """From our join page's field, or from a Persona webhook (data.attributes.payload.data.id)."""
+    if body.inquiry_id:
+        return body.inquiry_id
+    found = _dig(body.model_extra or {}, "inquiry-id", "inquiry_id", "inquiryId")
+    if found:
+        return found
+    node = body.model_extra or {}
+    for key in ("data", "attributes", "payload", "data"):
+        node = node.get(key) if isinstance(node, dict) else None
+    return node.get("id") if isinstance(node, dict) and str(node.get("id", "")).startswith("inq_") else None
 
 
 def _dig(value: Any, *keys: str) -> Any:
@@ -110,7 +134,7 @@ def persona_callback(body: CallbackIn) -> dict:
     """Mark a member verified once its Persona inquiry passed. Every outcome goes in the public log."""
     store = store_module.store
     cid, agent_id = _reference(body)
-    inquiry_id = body.inquiry_id or _dig(body.model_extra or {}, "inquiry-id", "inquiry_id", "inquiryId")
+    inquiry_id = _inquiry_id(body)
     if not cid or not agent_id:
         raise HTTPException(422, "coalition_id and agent_id are required (or a reference-id of '<coalition_id>:<agent_id>').")
     if not store.get_coalition(cid):
@@ -127,15 +151,12 @@ def persona_callback(body: CallbackIn) -> dict:
         # Never trust a status sent by the browser or a webhook body: ask Persona itself, every time.
         if not inquiry_id:
             raise HTTPException(422, "inquiry_id is required when Persona is configured.")
+        if not INQUIRY_ID.fullmatch(str(inquiry_id)):
+            raise HTTPException(422, "inquiry_id must look like inq_xxxxxxxx.")
         inquiry = fetch_inquiry(str(inquiry_id))
         status = inquiry["status"]
         if inquiry["reference_id"] != f"{cid}:{agent_id}":
             raise HTTPException(403, "This inquiry belongs to a different member.")
-        for row in store.log(cid):  # one inquiry, one member: stops one ID backing many accounts
-            b = row["body"]
-            if (row["type"] == "SYSTEM" and b.get("kind") == "persona_check" and b.get("verified")
-                    and b.get("inquiry_id") == str(inquiry_id) and b.get("agent_id") != agent_id):
-                raise HTTPException(409, "This inquiry already verified another member.")
 
     verified = mode == STUB_MODE or status in PASSED_STATUSES
     if verified:
@@ -144,7 +165,9 @@ def persona_callback(body: CallbackIn) -> dict:
     relay.record_system(cid, "persona_check", agent_id=agent_id, inquiry_id=inquiry_id,
                         status=status, mode=mode, environment=env, verified=verified)
     label = (" (sandbox stub, not a real identity check)" if mode == STUB_MODE
-             else " (Persona sandbox, not a real identity check)" if env == "sandbox" else "")
+             else "" if env == "production"
+             else " (Persona sandbox, not a real identity check)" if env == "sandbox"
+             else " (Persona environment unconfirmed)")
     bus.publish(cid, "chat", {"who": "persona",
                               "text": (f"{agent_id} is a verified unique human{label}." if verified
                                        else f"{agent_id} is not verified: inquiry {status}.")})

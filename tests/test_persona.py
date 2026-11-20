@@ -88,10 +88,13 @@ def test_stub_mode_is_labeled(client, fake, chat, monkeypatch):
     assert "stub" in chat[-1] and fake.rows[-1]["body"]["environment"] == "stub"
 
 
-def test_key_without_template_stays_in_stub_mode(client, monkeypatch):
+def test_key_without_template_is_an_error_never_the_stub(client, fake, monkeypatch):
     monkeypatch.setattr(config, "PERSONA_API_KEY", "persona_sandbox_dummy")
     monkeypatch.setattr(config, "PERSONA_TEMPLATE_ID", "")
-    assert client.get("/persona/callback").json()["mode"] == "sandbox-stub"
+    r = client.get("/persona/callback")
+    assert r.status_code == 503 and "PERSONA_TEMPLATE_ID" in r.text
+    r = callback(client, "a1", "inq_1")  # the stub must not quietly verify anyone
+    assert r.status_code == 503 and "a1" not in fake.verified
 
 
 def test_passed_inquiry_verifies_and_says_sandbox(client, fake, chat, live, monkeypatch):
@@ -116,11 +119,30 @@ def test_inquiry_of_another_member_is_refused(client, fake, live, monkeypatch):
     assert "a2" not in fake.verified
 
 
-def test_one_inquiry_cannot_verify_two_members(client, fake, live, monkeypatch):
-    inquiries(monkeypatch, {"inq_1": ("completed", f"{CID}:a2")})
-    fake.rows.append({"type": "SYSTEM", "body": {"kind": "persona_check", "verified": True,
-                                                 "inquiry_id": "inq_1", "agent_id": "a1"}})
-    assert callback(client, "a2", "inq_1").status_code == 409
+def test_webhook_shape_is_checked_with_persona_not_trusted(client, fake, live, monkeypatch):
+    asked = inquiries(monkeypatch, {"inq_9": ("created", f"{CID}:a1")})
+    hook = {"data": {"attributes": {"name": "inquiry.completed", "status": "approved",
+                                    "payload": {"data": {"type": "inquiry", "id": "inq_9",
+                                                         "attributes": {"reference-id": f"{CID}:a1", "status": "approved"}}}}}}
+    r = client.post("/persona/callback", json=hook)
+    assert asked == ["inq_9"]  # it asked Persona, whatever the webhook body claimed
+    assert r.json()["verified"] is False and "a1" not in fake.verified
+    inquiries(monkeypatch, {"inq_9": ("approved", f"{CID}:a1")})
+    assert client.post("/persona/callback", json=hook).json()["verified"] is True
+
+
+@pytest.mark.parametrize("bad", ["../accounts/act_1", "inq_1/../../x", "inq_1?x=1", "inq_1#", "abc", "inq_"])
+def test_inquiry_id_must_look_like_an_inquiry_id(client, fake, live, monkeypatch, bad):
+    asked = inquiries(monkeypatch, {})
+    assert callback(client, "a1", bad).status_code == 422
+    assert asked == [] and "a1" not in fake.verified
+
+
+def test_unconfirmed_environment_is_labeled(client, chat, live, monkeypatch):
+    monkeypatch.setattr(config, "PERSONA_API_KEY", "bare-token-without-prefix")
+    inquiries(monkeypatch, {"inq_1": ("approved", f"{CID}:a1")})
+    callback(client, "a1", "inq_1")
+    assert "unconfirmed" in chat[-1]
 
 
 def test_persona_failure_is_never_a_pass(client, fake, live, monkeypatch):
