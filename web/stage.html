@@ -422,7 +422,18 @@ function renderPresenter() {
   status.className = "status" + (state.presenter.error ? " err" : "");
 }
 
-async function trigger(path, label, nextBeat) {
+// A reset clears the run on the server but emits no event for it, so the screen drops the
+// previous run's offer, chart, chat, trap check and tally itself. Member counts are left to
+// pollCounts(), which is the source of truth and keeps the real members in the room.
+function clearRun() {
+  state.offer = null;
+  state.chart = [];
+  state.chat = [];
+  state.trap = null;
+  state.tally = null;
+}
+
+async function trigger(path, label, nextBeat, onOk) {
   state.presenter.status = `${label}…`;
   state.presenter.error = false;
   renderPresenter();
@@ -430,7 +441,10 @@ async function trigger(path, label, nextBeat) {
     const res = await post(path);
     state.presenter.error = !res.ok;
     state.presenter.status = res.ok ? `${label} ok` : `${label} failed (${res.status})`;
-    if (res.ok) state.presenter.next = nextBeat;
+    if (res.ok) {
+      state.presenter.next = nextBeat;
+      if (onOk) onOk();
+    }
   } catch (err) {
     state.presenter.error = true;
     state.presenter.status = `${label} failed (no relay)`;
@@ -450,7 +464,7 @@ function onPresenterKey(ev) {
     trigger(`/demo/beat/${n}`, `beat ${n}`, Math.min(n + 1, 6));
   } else if (ev.key === "r" || ev.key === "R") {
     ev.preventDefault();
-    trigger("/demo/reset", "reset", 1);  // soft reset only: real members survive
+    trigger("/demo/reset", "reset", 1, clearRun);  // soft reset only: real members survive
   }
 }
 
