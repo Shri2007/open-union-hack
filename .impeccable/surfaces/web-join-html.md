@@ -21,3 +21,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 
 ## Unresolved
 Owner's design rules (FRONTEND_RULES.md, local and git-ignored) to be applied when supplied. Audience confirmed only by inference.
+
+## Decisions after the finish review
+- Type: the platform system sans is chosen on purpose. This is an Operate surface (the mode's guidance favours system stacks), the page must work on bad venue wifi with no CDN, and the build rule is no dependencies. Mono is used only for data (the hash, the serial, the agent id).
+- Trust claim reworded to be exact: the limit is sealed on the phone, the relay sees only a hash until the deal closes, then the phone reveals the number. One copy change to the original lead; the owner should confirm.
+- Left as in the original script, owner OK needed to change: the stub button reads "Sandbox stub: verified" and can look like a finished state rather than an action.

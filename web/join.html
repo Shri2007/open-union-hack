@@ -35,6 +35,7 @@
 
   main { max-width: 520px; margin: 0 auto; padding: 20px 16px 56px; }
   h1 { font-size: 1.65rem; line-height: 1.15; font-weight: 800; letter-spacing: -.01em; margin: 0 0 8px; text-wrap: balance; }
+  .demo-note { margin: 0 0 16px; padding: 9px 12px; border: 1px solid var(--amber-line); background: var(--amber-bg); color: var(--amber-ink); border-radius: 6px; font-size: .88rem; font-weight: 600; }
   p.lead { color: var(--dim); margin: 0 0 20px; font-size: .98rem; max-width: 62ch; }
   body[data-step]:not([data-step="s-need"]) p.lead { display: none; }
   section { display: none; }
@@ -60,7 +61,9 @@
   button:hover { background: var(--green-press); }
   button:active { transform: scale(.985); }
   button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
-  button[disabled] { background: #8FA79A; cursor: progress; }
+  button[disabled] { background: #4E7A62; cursor: progress; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #go[disabled]::after, #verify-actions button[disabled]::after { background: none; border: 2.5px solid rgba(255,255,255,.45); border-top-color: #fff; border-radius: 50%; animation: spin .8s linear infinite; }
   button.stub { background: var(--amber-bg); color: var(--amber-ink); border: 2px solid var(--amber-line); }
   button.stub:hover { background: #FFE9A8; }
   button.secondary { background: var(--card); color: var(--ink); border: 2px solid var(--line-strong); }
@@ -81,6 +84,8 @@
   #v-agent { display: inline-block; white-space: nowrap; font: 600 .9rem/1.3 var(--mono); margin-top: 4px; }
   .tag.ok { background: var(--green-tint); color: #0B5A2F; }
   .tag.sandbox { background: var(--amber-bg); color: var(--amber-ink); border: 1px solid var(--amber-line); }
+  body:has(#err .err) #s-need .cell:has(input:placeholder-shown) { box-shadow: inset 0 0 0 2px var(--bad); }
+  body:has(#err .err) #s-need .cell:has(input:placeholder-shown) label { color: var(--bad); }
   .err { margin-top: 14px; padding: 12px; border: 1.5px solid var(--bad-line); background: var(--bad-bg); color: var(--bad-ink); border-radius: 6px; font-weight: 600; }
 
   /* the sealed receipt: serial, perforation, and the postmark that lands once */
@@ -93,13 +98,19 @@
   .stamp.land { animation: land .45s cubic-bezier(.2, 1.35, .4, 1) both; }
   @keyframes land { from { opacity: 0; transform: rotate(-9deg) scale(1.5); } to { opacity: .92; transform: rotate(-9deg) scale(1); } }
 
+  .closed-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 12px; }
+  .closed-top .headline { margin: 0; }
+  .stamp.small { width: 88px; height: 88px; }
+  .proof { margin: 0; font-size: .95rem; }
+  .proof a { color: var(--green); font-weight: 700; text-underline-offset: 3px; }
+  .proof a:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   .headline { font-size: 1.9rem; font-weight: 800; line-height: 1.15; margin: 2px 0; text-wrap: balance; }
   .headline.ok { color: var(--green); }
   .headline.bad { color: var(--bad); }
   .detail { margin: 0; color: var(--ink); }
 
   details.activity { margin-top: 24px; }
-  details.activity summary { cursor: pointer; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 6px 0; }
+  details.activity summary { cursor: pointer; font-size: .8rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); padding: 14px 0; }
   details.activity summary:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
   #log { list-style: none; margin: 6px 0 0; padding: 0; font: .78rem/1.4 var(--mono); color: var(--dim); }
   #log li { padding: 5px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
@@ -108,6 +119,7 @@
   @media (min-width: 720px) { main { padding-top: 32px; } h1 { font-size: 1.9rem; } }
   @media (prefers-reduced-motion: reduce) {
     .stamp.land { animation: none; }
+    #go[disabled]::after, #verify-actions button[disabled]::after { animation: none; }
     button, .steps li { transition: none; }
   }
 </style>
@@ -127,9 +139,10 @@
 
 <main>
 <h1>Join a coalition</h1>
-<p class="lead">Your limit never leaves this phone. We send only a sealed hash of it, and the number itself only when the deal closes.</p>
+<p class="lead">Your limit stays sealed on this phone. The relay sees only a hash of it until the deal closes, then your phone reveals the number.</p>
 
 <section id="s-need" class="on">
+  <p class="demo-note">Demo: the vendor and most members are simulated, and identity checks run in sandbox. Nothing is bought.</p>
   <div class="slip">
     <div class="cell">
       <label for="need">What do you want cheaper?</label>
@@ -164,17 +177,16 @@
   <div class="slip">
     <div class="receipt-top">
       <div>
-        <div class="k">You're in</div>
+        <div class="k">Sealed receipt</div>
         <div class="serial" id="r-serial">&nbsp;</div>
-        <div class="k" style="margin:4px 0 0">Sealed receipt</div>
       </div>
       <svg class="stamp" id="stamp" viewBox="0 0 120 120" role="img" aria-label="Postmark: limit sealed on this phone">
-        <defs><path id="stamp-ring" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0"/></defs>
-        <circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="3"/>
+        <defs><filter id="ink" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="1.6"/></filter><path id="stamp-ring" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0"/></defs>
+        <g filter="url(#ink)"><circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="3"/>
         <circle cx="60" cy="60" r="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/>
         <text font-size="9.5" font-weight="800" fill="currentColor"><textPath href="#stamp-ring" textLength="268" lengthAdjust="spacing">OPEN UNION · LIMIT SEALED · </textPath></text>
         <text x="60" y="58" text-anchor="middle" font-size="13" font-weight="800" fill="currentColor" id="r-date">NOV 20</text>
-        <text x="60" y="73" text-anchor="middle" font-size="8" font-weight="800" letter-spacing="1.6" fill="currentColor">SEALED</text>
+        <text x="60" y="73" text-anchor="middle" font-size="8" font-weight="800" letter-spacing="1.6" fill="currentColor">SEALED</text></g>
       </svg>
     </div>
     <div class="perf" aria-hidden="true"></div>
@@ -196,15 +208,26 @@
 
 <section id="s-closed">
   <div class="slip">
-    <div class="row">
-      <div class="k">Result</div>
+    <div class="closed-top">
       <div class="headline" id="v-result"></div>
+      <svg class="stamp small" id="stamp2" viewBox="0 0 120 120" role="img" aria-label="Postmark: price revealed">
+        <defs><path id="stamp2-ring" d="M60,60 m-44,0 a44,44 0 1,1 88,0 a44,44 0 1,1 -88,0"/></defs>
+        <g filter="url(#ink)"><circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="3"/>
+        <circle cx="60" cy="60" r="30" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <text font-size="9.5" font-weight="800" fill="currentColor"><textPath href="#stamp2-ring" textLength="268" lengthAdjust="spacing">OPEN UNION · PRICE REVEALED · </textPath></text>
+        <text x="60" y="58" text-anchor="middle" font-size="13" font-weight="800" fill="currentColor" id="c-date">NOV 20</text>
+        <text x="60" y="73" text-anchor="middle" font-size="8" font-weight="800" letter-spacing="1.6" fill="currentColor">CLOSED</text></g>
+      </svg>
     </div>
+    <div class="perf" aria-hidden="true"></div>
     <div class="row">
-      <div class="k">What happened</div>
       <p class="detail" id="v-result-detail"></p>
     </div>
+    <div class="row">
+      <p class="proof">Your price was revealed and can be re-checked by anyone. <a id="c-link" href="/verify.html">Re-check the deal</a></p>
+    </div>
   </div>
+  <p class="demo-note" style="margin-top:14px">Demo result: the vendor is simulated and nothing was bought.</p>
 </section>
 
 <div id="err" role="alert" aria-live="polite"></div>
@@ -247,8 +270,11 @@ function show(id) {
 // ---- presentation only: progress steps, grouped hash, postmark. Never touches the flow. ----
 const STEP_ORDER = ["s-need", "s-verify", "s-joined"];
 const groupHash = (h) => (h.match(/.{1,8}/g) || [h]).join(" ");
+const H1S = { "s-need": "Join a coalition", "s-verify": "Verify you're a real person", "s-joined": "You're in", "s-closed": "Deal closed" };
+const landStamp = (el) => { el.classList.remove("land"); void el.getBoundingClientRect(); el.classList.add("land"); };  // restart the one animation
 function uiAfterShow(id) {
   document.body.dataset.step = id;
+  document.querySelector("h1").textContent = H1S[id] || H1S["s-need"];
   const at = id === "s-closed" ? STEP_ORDER.length : STEP_ORDER.indexOf(id);
   document.querySelectorAll("#steps li").forEach((li, i) => {
     li.classList.toggle("done", i < at);
@@ -261,10 +287,12 @@ function uiAfterShow(id) {
       $("r-commit").textContent = groupHash(member.commitment);
       $("r-serial").textContent = member.commitment.slice(0, 4).toUpperCase() + " " + member.commitment.slice(4, 8).toUpperCase();
       $("r-date").textContent = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
-      const stamp = $("stamp");
-      stamp.classList.remove("land");
-      void stamp.getBoundingClientRect();  // restart the one animation
-      stamp.classList.add("land");
+      landStamp($("stamp"));
+    }
+    if (id === "s-closed") {
+      $("c-date").textContent = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase();
+      $("c-link").href = "/verify.html?c=" + encodeURIComponent(member.coalition_id);
+      landStamp($("stamp2"));
     }
   }
   window.scrollTo(0, 0);
