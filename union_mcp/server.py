@@ -75,18 +75,34 @@ def _locked():
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def _store_secret(coalition_id: str, record: dict) -> None:
+    """Replace one record. The caller holds the lock."""
+    data = _read_secrets()
+    data[_key(coalition_id)] = record
+    tmp = SECRETS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.chmod(0o600)
+    os.replace(tmp, SECRETS_PATH)  # atomic: a reader sees whole JSON or none
+
+
 def _write_secret(coalition_id: str, record: dict) -> None:
     with _locked():
-        data = _read_secrets()
-        data[_key(coalition_id)] = record
-        tmp = SECRETS_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        tmp.chmod(0o600)
-        os.replace(tmp, SECRETS_PATH)  # atomic: a reader sees whole JSON or none
+        _store_secret(coalition_id, record)
 
 
 def _secret(coalition_id: str) -> dict | None:
     return _read_secrets().get(_key(coalition_id))
+
+
+def _sealed(coalition_id: str) -> tuple[dict | None, dict | None]:
+    """The finished record for this coalition, or an error to hand back to the model."""
+    record = _secret(coalition_id)
+    if not record:
+        return None, {"error": "No sealed price stored for this coalition. Call union_join first."}
+    if record.get("pending"):
+        return None, {"error": "The join for this coalition did not finish, so the relay may hold no "
+                               "commitment. Call union_join again with the same limit first."}
+    return record, None
 
 
 # ------------------------------------------------------------------ relay calls
@@ -151,25 +167,24 @@ def union_join(coalition_id: str, max_monthly_price_usd: float) -> dict:
     if price_cents <= 0:
         return {"error": "max_monthly_price_usd must be greater than 0."}
 
-    record = _secret(coalition_id)
-    if record and not record.get("pending"):
-        return {"status": "already_joined", "coalition_id": coalition_id,
-                "agent_id": record["agent_id"], "commitment": record["commitment"],
-                "note": "A sealed price is already stored for this coalition and cannot be changed."}
-
-    if record and record["price_cents"] != price_cents:
-        # The commitment may already be on the relay and cannot be changed (CONTRACT rule 4).
-        return {"error": "An unfinished join is stored for this coalition with a different limit. "
-                         "Retry union_join with the original maximum monthly price."}
-
-    if not record:
-        # Written before anything is sent: a commitment the relay keeps must stay openable,
-        # and a retry resends under the same identity instead of orphaning it.
-        salt_hex = secrets_mod.token_hex(32)
-        record = {"agent_id": f"mcp-{secrets_mod.token_hex(3)}", "price_cents": price_cents,
-                  "salt_hex": salt_hex, "commitment": commitment_for(price_cents, salt_hex),
-                  "pending": True}
-        _write_secret(coalition_id, record)
+    with _locked():  # look up and claim an identity in one step, so two adapters mint only one
+        record = _secret(coalition_id)
+        if record and not record.get("pending"):
+            return {"status": "already_joined", "coalition_id": coalition_id,
+                    "agent_id": record["agent_id"], "commitment": record["commitment"],
+                    "note": "A sealed price is already stored for this coalition and cannot be changed."}
+        if record and record["price_cents"] != price_cents:
+            # The commitment may already be on the relay and cannot be changed (CONTRACT rule 4).
+            return {"error": "An unfinished join is stored for this coalition with a different limit. "
+                             "Retry union_join with the original maximum monthly price."}
+        if not record:
+            # Written before anything is sent: a commitment the relay keeps must stay openable,
+            # and a retry resends under the same identity instead of orphaning it.
+            salt_hex = secrets_mod.token_hex(32)
+            record = {"agent_id": f"mcp-{secrets_mod.token_hex(3)}", "price_cents": price_cents,
+                      "salt_hex": salt_hex, "commitment": commitment_for(price_cents, salt_hex),
+                      "pending": True}
+            _store_secret(coalition_id, record)
 
     agent_id, commitment = record["agent_id"], record["commitment"]
     try:
@@ -203,9 +218,10 @@ def union_status(coalition_id: str) -> dict:
     if secret:
         agent_id = secret["agent_id"]
         mine = [row["type"] for row in log if row["agent_id"] == agent_id]
-        me = {"joined": True, "agent_id": agent_id, "client": CLIENT,
+        me = {"joined": "JOIN" in mine, "agent_id": agent_id, "client": CLIENT,
               "commitment": secret["commitment"], "committed": "COMMIT" in mine,
-              "responded": "RESPOND" in mine, "revealed": "REVEAL" in mine}
+              "responded": "RESPOND" in mine, "revealed": "REVEAL" in mine,
+              "join_unfinished": bool(secret.get("pending"))}
 
     return {"coalition_id": coalition_id, "state": coalition.get("state"),
             "need": coalition.get("need"), "counts": coalition.get("counts"),
@@ -215,9 +231,9 @@ def union_status(coalition_id: str) -> dict:
 @mcp.tool()
 def union_respond(coalition_id: str) -> dict:
     """Accept or decline the latest offer. The decision is a comparison in code, not a judgment call."""
-    secret = _secret(coalition_id)
-    if not secret:
-        return {"error": "No sealed price stored for this coalition. Call union_join first."}
+    secret, problem = _sealed(coalition_id)
+    if problem:
+        return problem
     try:
         offer = _latest_offer(_get("/log", {"coalition_id": coalition_id}))
     except Exception as exc:
@@ -239,9 +255,9 @@ def union_respond(coalition_id: str) -> dict:
 @mcp.tool()
 def union_reveal(coalition_id: str) -> dict:
     """Reveal the sealed price so anyone can re-check the tally. Only works while the coalition is closing."""
-    secret = _secret(coalition_id)
-    if not secret:
-        return {"error": "No sealed price stored for this coalition. Call union_join first."}
+    secret, problem = _sealed(coalition_id)
+    if problem:
+        return problem
     try:
         state = _get(f"/coalitions/{coalition_id}").get("state")
     except Exception as exc:

@@ -125,6 +125,23 @@ def test_a_lost_commit_reply_keeps_the_salt_and_the_retry_reuses_it(relay):
     assert retried["commitment"] == failed["commitment"]
 
 
+def test_an_unfinished_join_blocks_respond_and_reveal(relay):
+    """A pending record means the relay may hold no commitment, so never publish the price."""
+    real_send = server._send
+    server._send = lambda *args: (_ for _ in ()).throw(httpx.ReadTimeout("reply lost"))
+    try:
+        server.union_join(COALITION, 62.0)
+    finally:
+        server._send = real_send
+
+    add_offer(relay, 5900)
+    relay["state"] = "closing"
+    assert "error" in server.union_respond(COALITION)
+    assert "error" in server.union_reveal(COALITION)
+    assert not [row for row in relay["log"] if row["type"] in ("RESPOND", "REVEAL")]
+    assert server.union_status(COALITION)["me"]["join_unfinished"] is True
+
+
 def test_secrets_are_namespaced_by_relay(relay, monkeypatch):
     first_relay = server.relay_url()
     first = server.union_join(COALITION, 62.0)
