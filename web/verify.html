@@ -31,6 +31,7 @@
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 420px; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #1e2740; vertical-align: top; }
   th { color: #8694b4; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cell { display: block; min-width: 0; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
   .tag { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
   .tag.match { background: #15361f; color: #6ee79b; }
@@ -39,6 +40,18 @@
   .tag.sim { background: #3a2d10; color: #f0c674; margin-left: 6px; }
   .why { display: block; color: #8694b4; font-size: 0.78rem; }
   .err { border: 1px solid #5a2126; background: #2a1316; color: #ffb4b4; border-radius: 10px; padding: 12px; }
+  /* Phone: stack each row so the mismatch reason reads without horizontal scrolling. */
+  @media (max-width: 480px) {
+    .scroll { overflow-x: visible; }
+    table { min-width: 0; }
+    thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    tbody tr { display: block; border: 1px solid #222c45; background: #111728; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+    tbody td { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 10px; border: none; padding: 3px 0; }
+    tbody td::before { content: attr(data-label); color: #8694b4; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.6; }
+    tbody td.empty { display: block; }
+    tbody td.empty::before { content: none; }
+    .why { margin-top: 2px; }
+  }
   footer { margin-top: 26px; font-size: 0.8rem; color: #6f7d9c; }
 </style>
 </head>
@@ -99,9 +112,15 @@ function finalOffer(log) {
 
 async function verifyAgent(a, offerCents) {
   const out = { ...a, simulated: a.client !== null && !REAL_CLIENTS.includes(a.client) };
-  if (!a.reveal || typeof a.reveal.price_cents !== "number" || typeof a.reveal.salt_hex !== "string") {
+  if (!a.reveal) {
     out.status = "missing";
     out.why = a.commit ? "no REVEAL in the log" : "no COMMIT and no REVEAL in the log";
+    return out;
+  }
+  if (typeof a.reveal.price_cents !== "number" || typeof a.reveal.salt_hex !== "string") {
+    // A REVEAL that exists but can't be hashed is a failed check, never a silent absence.
+    out.status = "mismatch";
+    out.why = "REVEAL in the log is malformed: price_cents or salt_hex is missing or the wrong type";
     return out;
   }
   out.price_cents = a.reveal.price_cents;
@@ -144,7 +163,7 @@ function render(rows, offer, log) {
       : r.status === "mismatch" ? '<span class="tag mismatch">mismatch</span>'
       : '<span class="tag missing">not revealed</span>';
     const sim = r.simulated ? ` <span class="tag sim">simulated · ${esc(r.client)}</span>` : "";
-    const price = r.status === "missing" ? "—" : esc(dollars(r.price_cents));
+    const price = typeof r.price_cents === "number" ? esc(dollars(r.price_cents)) : "—";
     const accepts = r.status !== "match" ? "—" : (r.accepts === undefined ? "—" : (r.accepts ? "yes" : "no"));
     const why = r.why ? `<span class="why">${esc(r.why)}</span>` : "";
     const dupes = [];
@@ -152,18 +171,18 @@ function render(rows, offer, log) {
     if (r.reveals > 1) dupes.push(r.reveals + " REVEALs, latest used");
     const note = dupes.length ? `<span class="why">${esc(dupes.join("; "))}</span>` : "";
     return `<tr>
-      <td>${esc(r.agent_id)}${sim}${note}</td>
-      <td><code>${esc(short(r.commit))}</code></td>
-      <td>${price}</td>
-      <td>${tag}${why}</td>
-      <td>${accepts}</td>
+      <td data-label="Pseudonym"><span class="cell">${esc(r.agent_id)}${sim}${note}</span></td>
+      <td data-label="Commitment"><span class="cell"><code>${esc(short(r.commit))}</code></span></td>
+      <td data-label="Revealed price"><span class="cell">${price}</span></td>
+      <td data-label="Check"><span class="cell">${tag}${why}</span></td>
+      <td data-label="Accepts"><span class="cell">${accepts}</span></td>
     </tr>`;
   }).join("");
 
   document.getElementById("body").innerHTML = `
     <div class="scroll"><table>
       <thead><tr><th>Pseudonym</th><th>Commitment</th><th>Revealed price</th><th>Check</th><th>Accepts</th></tr></thead>
-      <tbody>${tbody || '<tr><td colspan="5">No member agents in this log yet.</td></tr>'}</tbody>
+      <tbody>${tbody || '<tr><td class="empty" colspan="5">No member agents in this log yet.</td></tr>'}</tbody>
     </table></div>`;
 
   const terms = offer ? ` · final offer ${dollars(offerCents)}/month — ${offer.body.terms_text}` : " · no OFFER yet";
