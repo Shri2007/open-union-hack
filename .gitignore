@@ -6,3 +6,4 @@ members_secrets.json
 .DS_Store
 .env.*
 !.env.example
+demo/
