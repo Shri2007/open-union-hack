@@ -207,21 +207,29 @@ def beat4(cid: str) -> None:
 
 
 def beat5(cid: str) -> None:
+    # The final offer is whatever the vendor is quoting now, so it never jumps above an earlier quote.
+    p = quote(cid, _s().counts(cid)["verified"])
+    d = dollars(p)
+    trap = (f"{d}/month for the first 3 months (introductory rate), then $95/month standard rate. "
+            "24-month agreement. $5/month line access fee per line.")
+    clean = f"{d}/month per line, fixed for 12 months. No added fees. Activation waived."
     chat(cid, "system", "Beat 5 · The vendor's final offer, checked against the fine print.")
-    chat(cid, "vendor", say("vendor", "Present a final offer of $58 a month, sounding generous. Don't mention the fine print.",
-                            "Final offer: $58 a month. You won't find better."))
-    offer(cid, 5800, TRAP_TERMS)
-    result = _check_offer(cid, 5800, TRAP_TERMS)
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Present a final offer of {d} a month per line, "
+                                      "sounding generous. Don't mention the fine print.",
+                            f"Final offer: {d} a month. You won't find better."))
+    offer(cid, p, trap)
+    result = _check_offer(cid, p, trap)
     if result.get("verdict") == "pass":
         chat(cid, "system", "Offer check passed the trap offer. Review the trap questions.")
         return
-    chat(cid, "coalition", "Rejected. $58 that becomes $95 after 3 months, plus fees, is not $58. "
-                           "We need $58 fixed for 12 months, no added fees.")
+    chat(cid, "coalition", f"Rejected. {d} that becomes $95 after 3 months, plus fees, is not {d}. "
+                           f"We need {d} fixed for 12 months, no added fees.")
     time.sleep(TRAP_PAUSE_SECONDS)  # keep the rejected trap check on screen long enough for the room to read it
-    chat(cid, "vendor", say("vendor", "Grudgingly agree to $58 a month fixed for 12 months with no added fees.",
-                            "Fine. $58 a month, fixed for 12 months, no added fees."))
-    offer(cid, 5800, CLEAN_TERMS)
-    _check_offer(cid, 5800, CLEAN_TERMS)
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Grudgingly agree to {d} a month per line, "
+                                      "fixed for 12 months, no added fees.",
+                            f"Fine. {d} a month, fixed for 12 months, no added fees."))
+    offer(cid, p, clean)
+    _check_offer(cid, p, clean)
 
 
 def beat6(cid: str) -> None:
