@@ -23,7 +23,7 @@ class Store:
     def _q(self, sql: str, args=(), fetch: str | None = None):
         for attempt in (1, 2):  # retry once on a dropped connection
             try:
-                with db.shared().cursor() as cur:
+                with db.pooled() as conn, conn.cursor() as cur:
                     cur.execute(sql, args)
                     if fetch == "one":
                         return cur.fetchone()
@@ -31,7 +31,6 @@ class Store:
                         return cur.fetchall()
                     return None
             except Exception:
-                db.reset_shared()
                 if attempt == 2:
                     raise
 
