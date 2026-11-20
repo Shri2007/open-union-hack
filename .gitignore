@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+members_secrets.json
+.DS_Store
