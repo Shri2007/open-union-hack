@@ -10,3 +10,7 @@ demo/
 node_modules/
 package.json
 package-lock.json
+
+# Raw demo footage stays local (too big for git); the script is tracked
+video/*
+!video/SCRIPT.md
