@@ -7,6 +7,7 @@ Pieces built by others plug in here:
 Until each lands, the local fallbacks below keep the demo running.
 """
 import math
+import queue
 import os
 import subprocess
 import sys
@@ -37,7 +38,6 @@ _remembered: dict[str, int] = {}  # coalition_id -> cents off the curve from Cog
 
 def quote(cid: str, n: int) -> int:
     return max(3800, price_for(n) - _concessions.get(cid, 0) - _remembered.get(cid, 0))
-_running = threading.Lock()
 
 TRAP_TERMS = ("$58/month for the first 3 months (introductory rate), then $95/month standard rate. "
               "24-month agreement. $5/month line access fee per line.")
@@ -287,9 +287,29 @@ def _run(n: int, cid: str) -> None:
         BEATS[n](cid)
     except Exception as exc:  # a failed beat must say so on screen, never hang silently
         chat(cid, "system", f"Beat {n} failed: {type(exc).__name__}. Check the server log.")
-        raise
-    finally:
-        _running.release()
+        print(f"beat {n} on {cid} failed: {exc!r}", file=sys.stderr)
+
+
+# One queue and one worker per coalition: beats on the same coalition run in the order they were pressed,
+# and drills on other coalitions never block the demo.
+_queues: dict[str, "queue.Queue[int]"] = {}
+_queues_lock = threading.Lock()
+
+
+def _worker(cid: str, q: "queue.Queue[int]") -> None:
+    while True:
+        n = q.get()
+        _run(n, cid)
+        q.task_done()
+
+
+def _queue_for(cid: str) -> "queue.Queue[int]":
+    with _queues_lock:
+        q = _queues.get(cid)
+        if q is None:
+            q = _queues[cid] = queue.Queue()
+            threading.Thread(target=_worker, args=(cid, q), daemon=True, name=f"beats-{cid}").start()
+        return q
 
 
 @router.post("/demo/beat/{n}")
@@ -298,10 +318,10 @@ def run_beat(n: int, c: str = DEMO_COALITION_ID):
         raise HTTPException(404, "Beats are 1 to 7 (7 is the walkout).")
     if not _s().get_coalition(c):
         raise HTTPException(404, f"Unknown coalition {c}")
-    if not _running.acquire(blocking=False):
-        raise HTTPException(409, "Another beat is still running.")
-    threading.Thread(target=_run, args=(n, c), daemon=True).start()
-    return {"started": n, "coalition_id": c}
+    q = _queue_for(c)
+    ahead = q.unfinished_tasks
+    q.put(n)
+    return {"started": n, "coalition_id": c, "queued_behind": ahead}
 
 
 @router.post("/demo/reset")
