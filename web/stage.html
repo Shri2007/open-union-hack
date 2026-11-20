@@ -129,6 +129,7 @@
   .join-text { display: flex; flex-direction: column; gap: 6px; max-width: 220px; }
   .join-text b { font-size: 30px; font-weight: 800; color: var(--mid); line-height: 1; }
   .join-text span { font-size: 17px; color: var(--gray); line-height: 1.3; }
+  .join-agents b { font-size: 17px; color: var(--mid); }
   .replay-gate { pointer-events: auto; z-index: 60; }
   .replay-btn { margin: 22px 0 14px; font: 800 clamp(28px, 4vw, 48px)/1 var(--sans); color: var(--mid); background: var(--white);
     border: 0; border-radius: 999px; padding: 18px 44px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
@@ -159,7 +160,7 @@
 <!-- Scan-to-join card: the room joins straight off the projector. Q hides or shows it. -->
 <aside class="join-card" id="join-card" hidden>
   <img id="join-qr" alt="QR code to join the coalition" width="168" height="168">
-  <div class="join-text"><b>Scan to join</b><span>30 seconds. Your limit never leaves your phone.</span></div>
+  <div class="join-text"><b>Scan to join</b><span>30 seconds. Your limit never leaves your phone.</span><span class="join-agents">Have an agent? <b id="agents-url">/agents.html</b></span></div>
 </aside>
 
 <div class="board">
@@ -1067,6 +1068,7 @@ if (REPLAY) {
     if (!d.url) return;
     $("join-qr").src = "/join-qr.svg?t=" + Date.now();
     $("join-card").hidden = false;
+    $("agents-url").textContent = d.url.replace(/^https?:\/\//, "") + "/agents.html";
   }).catch(() => {});
   window.addEventListener("keydown", (ev) => {
     if ((ev.key === "q" || ev.key === "Q") && !ev.metaKey && !ev.ctrlKey) $("join-card").hidden = !$("join-card").hidden;
