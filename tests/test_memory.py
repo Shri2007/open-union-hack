@@ -1,7 +1,15 @@
 """Vendor memory (SIMULATED) with a fake backend: no network, no Cognee."""
 import asyncio
 
+import pytest
+
 from app import memory
+
+
+@pytest.fixture(autouse=True)
+def no_memory_service(monkeypatch):
+    # A developer's .env may point MEMORY_URL at a running Cognee service; these tests are offline.
+    monkeypatch.setattr(memory, "MEMORY_URL", "")
 
 
 class FakeBackend:
