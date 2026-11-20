@@ -1,0 +1,26 @@
+{
+  "schema": "firedrill.native-scenario.v2",
+  "name": "Open Union simulated sybil",
+  "description": "Run a simulated test against the isolated Open Union relay.",
+  "instruction": "Submit the fixed task once.",
+  "personas": [],
+  "evaluations": [
+    {
+      "origin": "native_library",
+      "kind": "evaluation",
+      "id": "1257e78d-668e-48a1-b3d9-06741cb4eb5c",
+      "revision": 1,
+      "digest": "aec2bf30749fa5fa8e644993583d65acfc941f39071aa2209fa1f19f8a85df74"
+    }
+  ],
+  "conditions": [],
+  "events": [],
+  "max_turns": 1,
+  "stop_rules": [],
+  "target_input": {
+    "kind": "task",
+    "input": {
+      "drill": "sybil"
+    }
+  }
+}

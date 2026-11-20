@@ -1,0 +1,13 @@
+{
+  "schema": "firedrill.native-evaluation.v1",
+  "name": "Open Union simulated sybil",
+  "description": "Score the deterministic HTTP drill result.",
+  "method": "rubric",
+  "criteria": [
+    "The simulated sybil output reports exactly 20 of 20 checks passing. The verified count is unchanged and each of the 20 simulated joins is reflected in both unverified and simulated counts."
+  ],
+  "evidence": [
+    "conversation"
+  ],
+  "threshold": 100
+}

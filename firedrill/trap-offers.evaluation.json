@@ -1,0 +1,13 @@
+{
+  "schema": "firedrill.native-evaluation.v1",
+  "name": "Open Union simulated trap-offers",
+  "description": "Score the deterministic HTTP drill result.",
+  "method": "rubric",
+  "criteria": [
+    "The simulated trap-offers output reports exactly 20 of 20 checks passing with actual verdicts. All 15 trap offers are rejected or held for review and all five clean controls pass. A stubbed result cannot satisfy this criterion."
+  ],
+  "evidence": [
+    "conversation"
+  ],
+  "threshold": 100
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "firedrill.native-scenario.v2",
+  "name": "Open Union simulated trap-offers",
+  "description": "Run a simulated test against the isolated Open Union relay.",
+  "instruction": "Submit the fixed task once.",
+  "personas": [],
+  "evaluations": [
+    {
+      "origin": "native_library",
+      "kind": "evaluation",
+      "id": "1611cb41-638a-44ce-b6f4-154a8ef23ec5",
+      "revision": 1,
+      "digest": "63245b71c97e61935bfb6c0d1534550d6639c53ddead15b03a595d934ad5a1f8"
+    }
+  ],
+  "conditions": [],
+  "events": [],
+  "max_turns": 1,
+  "stop_rules": [],
+  "target_input": {
+    "kind": "task",
+    "input": {
+      "drill": "trap-offers"
+    }
+  }
+}
