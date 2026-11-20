@@ -19,8 +19,23 @@ _loop: asyncio.AbstractEventLoop | None = None
 _lock = threading.Lock()
 
 
+MEMORY_URL = os.environ.get("MEMORY_URL", "").rstrip("/")  # Cognee running as scripts/memory_service.py
+
+
 def enabled() -> bool:
-    return os.environ.get("COGNEE_MEMORY") == "1"
+    return os.environ.get("COGNEE_MEMORY") == "1" or bool(MEMORY_URL)
+
+
+def _remote(path: str, payload: dict, timeout: float) -> dict | None:
+    """Call the separate Cognee memory service. Any failure means no memory, never an error."""
+    import httpx
+    try:
+        r = httpx.post(f"{MEMORY_URL}{path}", json=payload, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as exc:
+        log.warning("memory service %s failed, continuing without memory: %r", path, exc)
+        return None
 
 
 def memory_sentence(need: str, walk_price_cents: int) -> str:
@@ -91,6 +106,8 @@ def _run(coro):
 def remember_walkout(need: str, walk_price_cents: int, force: bool = False) -> bool:
     if not (enabled() or force):
         return False
+    if MEMORY_URL and not force:
+        return bool(_remote("/remember", {"need": need, "walk_price_cents": walk_price_cents}, 5))
     try:
         _run(_get_backend().store(memory_sentence(need, walk_price_cents)))
         log.info("memory: stored walkout at %s cents for %r (Cognee, simulated vendor)", walk_price_cents, need)
@@ -103,6 +120,9 @@ def remember_walkout(need: str, walk_price_cents: int, force: bool = False) -> b
 def recall_walkout(need: str, force: bool = False) -> dict | None:
     if not (enabled() or force):
         return None
+    if MEMORY_URL and not force:
+        got = _remote("/recall", {"need": need}, float(os.environ.get("MEMORY_RECALL_TIMEOUT", "10")))
+        return (got or {}).get("memory")
     try:
         for text in _run(_get_backend().search(need)):
             m = _PRICE_RE.search(text or "")

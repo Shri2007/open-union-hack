@@ -37,8 +37,9 @@ The protocol is six messages (`INTENT`, `JOIN`, `COMMIT`, `OFFER`, `RESPOND`, `R
 | **SingleStore** | Stores the public log, coalitions and members (`app/db.py`, `app/store.py`), and runs SQL plus vector search in one query: each coalition's need is a `VECTOR(384)` embedding, and `nearest_coalitions` ranks open coalitions by similarity (`<*>`) to a new member's need. That shortlist goes to TypeSafe, which judges each candidate (`app/matching.py`). |
 | **Arcee** | Writes the short vendor and coalition lines on the stage screen (`app/vendor.py`), with Anthropic as a fallback. It never sets a price. |
 | **Firedrill** | Two simulation recipes against the relay's HTTP API, a sign-up attack and a set of trap offers (`firedrill/`, see [firedrill/README.md](firedrill/README.md)). |
+| **Cognee** | Vendor memory (`app/memory.py`, `scripts/memory_service.py`). When a coalition walks out, the simulated vendor stores it in Cognee (add + cognify); at the next negotiation it recalls it by searching the need and opens $2 lower. Cognee runs as its own local service in a separate Python environment (`scripts/run_memory.sh`), so if it's down the relay just has no memory. |
 
-Not used: Amplitude, Statsig, Airbyte, Superlinked, Cognee, Guild AI.
+Not used: Amplitude, Statsig, Airbyte, Superlinked, Guild AI.
 
 ## Run it locally
 
