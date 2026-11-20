@@ -736,6 +736,11 @@ function reconcileFloor() {
       left--;
     }
   }
+  // Once the counts say a member passed, its JOIN stops being evidence of an outstanding check,
+  // so the hint retires. Otherwise the member who passed first would keep taking the red dot from
+  // the one who is actually still waiting.
+  for (const dot of live.sim) if (dot.verified) dot.joinedUnverified = false;
+  for (const dot of live.real) if (dot.verified) dot.joinedUnverified = false;
 }
 
 function drawFloor(now) {
