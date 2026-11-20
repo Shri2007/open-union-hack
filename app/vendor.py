@@ -1,5 +1,6 @@
 """Deterministic pricing and short dialogue for the negotiation demo."""
 
+import logging
 from math import log1p
 from queue import Empty, Queue
 import re
@@ -10,6 +11,8 @@ from anthropic import Anthropic
 from openai import OpenAI
 
 from app import config
+
+log = logging.getLogger("open_union.vendor")
 
 _ARCEE_SECONDS = 6
 _TOTAL_SECONDS = 9.5
@@ -52,9 +55,14 @@ def _arcee(prompt: str, situation: str, timeout: float) -> str | None:
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": situation},
             ],
-            max_tokens=96,
+            # Arcee's models think before answering; low effort plus room to finish keeps a line near 1-2s.
+            max_tokens=600,
+            extra_body={"reasoning_effort": "low"},
         )
-        return response.choices[0].message.content
+        line = (response.choices[0].message.content or "").strip().strip('"').strip("'").strip()
+        if line:
+            log.info("vendor line from Arcee %s", config.ARCEE_MODEL_SMALL)
+        return line or None
 
 
 def _haiku(prompt: str, situation: str, timeout: float) -> str | None:
