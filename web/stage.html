@@ -48,6 +48,15 @@
   .stat.simulated .n { color: #8A5A00; }
   .stat .tag { margin-left: 4px; }
 
+  /* the floor: one dot per member, under the member counts */
+  .floor-wrap { margin-top: 14px; }
+  #floor { display: block; width: 100%; height: 104px; border-radius: 10px; background: #F6F3FF; }
+  .floor-legend { display: flex; gap: 20px; margin-top: 8px; font-size: 17px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--gray); }
+  .floor-legend i { display: inline-block; width: 13px; height: 13px; border-radius: 50%; margin-right: 7px; vertical-align: -1px; }
+  /* confetti sits over everything, including the savings overlay, and never takes a click */
+  #confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 60; }
+  #confetti[hidden] { display: none; }
+
   .chart { width: 100%; height: auto; aspect-ratio: 8 / 3; }
   .chart text { fill: var(--gray); font-size: 28px; font-weight: 500; }
 
@@ -153,6 +162,14 @@
       <div class="stat"><div class="n" id="c-real">0</div><div class="k">real members</div></div>
       <div class="stat simulated"><div class="n" id="c-simulated">0</div><div class="k">Firedrill members <span class="tag">simulated</span></div></div>
     </div>
+    <div class="floor-wrap">
+      <canvas id="floor" role="img" aria-label="The floor: one dot per member"></canvas>
+      <div class="floor-legend">
+        <span><i style="background:#7C5CFC"></i>real</span>
+        <span><i style="background:#9AA3B5"></i>simulated</span>
+        <span><i style="background:#B3261E"></i>unverified</span>
+      </div>
+    </div>
   </section>
 </div>
 
@@ -165,6 +182,7 @@
 </section>
 
 <div class="overlay" id="strike" hidden><div><div class="big"><svg class="sign" viewBox="0 0 64 64" aria-hidden="true"><rect x="12" y="6" width="40" height="28" rx="4"/><path d="M20 15h24M20 21h24M20 27h14M32 34v24"/></svg> ON STRIKE</div><div class="small" id="strike-text"></div></div></div>
+<canvas id="confetti" hidden aria-hidden="true"></canvas>
 <div class="overlay" id="savings" hidden><div><div class="small">This room just saved</div><div class="big" id="savings-n">$0</div><div class="small" id="savings-sub">a year</div></div></div>
 
 <div class="grid">
@@ -290,6 +308,7 @@ function render() {
   renderChat();
   renderTrap();
   renderTally();
+  renderFloor();
   renderPresenter();
 }
 
@@ -565,6 +584,289 @@ handlers.tally = (d) => {
   flash("savings", 9000);
   countUp($("savings-n"), yearly, 3500);
 };
+
+// --- the floor -----------------------------------------------------------
+// One dot per member inside the Members card, driven by the member events above and topped up
+// from the /coalitions/{id} counts the page already polls. Real members (web, mcp) are big
+// purple dots that pulse once as they join, simulated members (firedrill, simulated-attack) are
+// small gray dots, and anyone Persona has not passed is red. Beat 4's removals run a scan line
+// across the floor and dissolve the red dots it reaches; a tally bursts confetti for 3 seconds.
+// Everything is one canvas and one animation loop, with the dots drawn in batches by colour, so
+// beat 3 dropping 500 attack members at once costs a handful of fills rather than 500.
+const FLOOR_CAP = 1000;
+const FLOOR_COLOR = { real: "#7C5CFC", sim: "#9AA3B5", unverified: "#B3261E" };
+const SWEEP_MS = 900, DISSOLVE_MS = 420, PULSE_MS = 650, CONFETTI_MS = 3000;
+const REDUCED = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+const floorCanvas = $("floor"), fx = floorCanvas.getContext("2d");
+const confettiCanvas = $("confetti"), cx = confettiCanvas.getContext("2d");
+
+const floor = {
+  dots: [],             // { slot, x, y, kind: "real" | "sim", verified, pulseAt, doomed, dissolveAt }
+  byAgent: new Map(),   // agent_id -> dot, so a removal hits the dot that joined
+  freeSlots: [],        // lattice slots not in use, smallest first
+  w: 0, h: 0, cols: 1, rows: 1,
+  sweepAt: 0,           // when the Persona scan line started, 0 when it is not running
+  confettiAt: 0,
+  confetti: [],
+  frame: 0              // rAF handle, 0 when the loop is parked
+};
+
+function sizeFloor() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  floor.w = floorCanvas.clientWidth || 600;
+  floor.h = floorCanvas.clientHeight || 104;
+  floorCanvas.width = Math.round(floor.w * dpr);
+  floorCanvas.height = Math.round(floor.h * dpr);
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  confettiCanvas.width = Math.round(innerWidth * dpr);
+  confettiCanvas.height = Math.round(innerHeight * dpr);
+  cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  relayout();
+}
+
+// The lattice is sized to the crowd that is actually there, so 300 members fill the field and
+// 800 pack into it. Dots keep their slot, so a join or a removal never shuffles the room.
+function relayout() {
+  let slots = 64;
+  for (const dot of floor.dots) slots = Math.max(slots, dot.slot + 1);
+  const cols = Math.min(140, Math.max(10, Math.round(Math.sqrt(slots * (floor.w / floor.h) * 1.35))));
+  const rows = Math.max(2, Math.ceil(slots / cols));
+  if (cols === floor.cols && rows === floor.rows) return;
+  floor.cols = cols;
+  floor.rows = rows;
+  for (const dot of floor.dots) placeDot(dot);
+}
+
+// After the Persona sweep the survivors close ranks instead of leaving the gaps behind.
+function compact() {
+  if (!floor.freeSlots.length || floor.dots.some((d) => d.doomed)) return;
+  floor.dots.sort((a, b) => a.slot - b.slot).forEach((dot, i) => { dot.slot = i; });
+  floor.freeSlots = [];
+  floor.cols = 0;
+  relayout();
+}
+
+// A slot's jitter is a hash of the slot number, so a dot keeps its spot across resizes and the
+// field looks like a crowd rather than graph paper.
+function placeDot(dot) {
+  const col = dot.slot % floor.cols, row = Math.floor(dot.slot / floor.cols);
+  const cw = floor.w / floor.cols, ch = floor.h / floor.rows;
+  const h1 = Math.sin(dot.slot * 12.9898) * 43758.5453;
+  const h2 = Math.sin(dot.slot * 78.233) * 12345.6789;
+  dot.x = (col + 0.5) * cw + (h1 - Math.floor(h1) - 0.5) * cw * 0.7;
+  dot.y = (row + 0.5) * ch + (h2 - Math.floor(h2) - 0.5) * ch * 0.7;
+}
+
+function takeSlot() {
+  if (floor.freeSlots.length) return floor.freeSlots.pop();
+  return floor.dots.length < FLOOR_CAP ? floor.dots.length : -1;
+}
+
+function addDot(kind, verified, agentId, pulse) {
+  const slot = takeSlot();
+  if (slot < 0) return null;  // at the cap: the counts keep counting, the floor stops filling
+  const dot = { slot, x: 0, y: 0, kind, verified, pulseAt: pulse && !REDUCED ? performance.now() : 0, doomed: false, dissolveAt: 0 };
+  placeDot(dot);
+  floor.dots.push(dot);
+  if (agentId) floor.byAgent.set(agentId, dot);
+  return dot;
+}
+
+function dropDot(dot) {
+  const at = floor.dots.indexOf(dot);
+  if (at < 0) return;
+  floor.dots.splice(at, 1);
+  floor.freeSlots.push(dot.slot);
+  floor.freeSlots.sort((a, b) => b - a);
+}
+
+// Beat 4: Persona removes everyone who never passed. The dots go out under a scan line rather
+// than vanishing, so the room can see the sweep happen.
+function removeDot(agentId) {
+  let dot = floor.byAgent.get(agentId);
+  if (dot) floor.byAgent.delete(agentId);
+  if (!dot || dot.doomed) dot = floor.dots.find((d) => !d.doomed && !d.verified);
+  if (!dot) return;
+  if (REDUCED) return dropDot(dot);
+  dot.doomed = true;
+  if (!floor.sweepAt) floor.sweepAt = performance.now();
+  startLoop();
+}
+
+// The counts are the source of truth: members seeded before this page loaded, and /demo/reset
+// dropping the simulated crowd, never reach us as events. Unverified dots go to the attack crowd
+// first, since that is who beat 3 adds without a Persona inquiry.
+function reconcileFloor() {
+  const c = state.counts;
+  const real = Math.min(c.real, FLOOR_CAP);
+  const sim = Math.min(c.simulated, FLOOR_CAP - real);
+  const simUnverified = Math.min(c.unverified, sim);
+  const realUnverified = Math.min(real, Math.max(0, c.unverified - simUnverified));
+  const want = {
+    "real:1": real - realUnverified, "real:0": realUnverified,
+    "sim:1": sim - simUnverified, "sim:0": simUnverified
+  };
+  const have = { "real:1": 0, "real:0": 0, "sim:1": 0, "sim:0": 0 };
+  const alive = [];
+  for (const dot of floor.dots) {
+    if (dot.doomed) continue;
+    have[`${dot.kind}:${dot.verified ? 1 : 0}`]++;
+    alive.push(dot);
+  }
+  for (const key of Object.keys(want)) {
+    const [kind, verified] = key.split(":");
+    for (let i = have[key]; i < want[key]; i++) addDot(kind, verified === "1", null, false);
+    for (let i = have[key]; i > want[key]; i--) {
+      const extra = alive.find((d) => !d.doomed && d.kind === kind && d.verified === (verified === "1"));
+      if (extra) { extra.doomed = true; dropDot(extra); }
+    }
+  }
+}
+
+function drawFloor(now) {
+  fx.clearRect(0, 0, floor.w, floor.h);
+  const sweepX = floor.sweepAt ? ((now - floor.sweepAt) / SWEEP_MS) * (floor.w + 40) - 20 : -1;
+  // Solid dots are drawn in one path per colour; fading ones are bucketed by opacity, so a
+  // 500-dot dissolve is eight fills instead of five hundred.
+  const solid = { real: [], sim: [], unverified: [] };
+  const fading = new Map();
+  const gone = [];
+  for (const dot of floor.dots) {
+    if (dot.doomed && !dot.dissolveAt && (floor.sweepAt === 0 || dot.x <= sweepX)) dot.dissolveAt = now;
+    const colour = !dot.verified ? "unverified" : dot.kind === "real" ? "real" : "sim";
+    let r = dot.kind === "real" ? 4.2 : 2.4;
+    if (dot.pulseAt) {
+      const t = (now - dot.pulseAt) / PULSE_MS;
+      if (t >= 1) dot.pulseAt = 0; else r *= 1 + 1.4 * (1 - t) * (1 - t);
+    }
+    if (dot.dissolveAt) {
+      const t = (now - dot.dissolveAt) / DISSOLVE_MS;
+      if (t >= 1) { gone.push(dot); continue; }
+      const bucket = `${colour}:${Math.ceil((1 - t) * 8)}`;
+      if (!fading.has(bucket)) fading.set(bucket, []);
+      fading.get(bucket).push([dot.x, dot.y, r * (1 - t * 0.5)]);
+    } else {
+      solid[colour].push([dot.x, dot.y, r]);
+    }
+  }
+  for (const dot of gone) dropDot(dot);
+  for (const colour of Object.keys(solid)) {
+    if (!solid[colour].length) continue;
+    fx.fillStyle = FLOOR_COLOR[colour];
+    fx.beginPath();
+    for (const [x, y, r] of solid[colour]) { fx.moveTo(x + r, y); fx.arc(x, y, r, 0, 6.2832); }
+    fx.fill();
+  }
+  for (const [bucket, dots] of fading) {
+    const [colour, step] = bucket.split(":");
+    fx.globalAlpha = Number(step) / 8;
+    fx.fillStyle = FLOOR_COLOR[colour];
+    fx.beginPath();
+    for (const [x, y, r] of dots) { fx.moveTo(x + r, y); fx.arc(x, y, r, 0, 6.2832); }
+    fx.fill();
+  }
+  fx.globalAlpha = 1;
+  if (floor.sweepAt) {
+    if (sweepX > floor.w + 20) {
+      floor.sweepAt = 0;
+      for (const dot of floor.dots) if (dot.doomed && !dot.dissolveAt) dot.dissolveAt = now;
+    } else {
+      const band = fx.createLinearGradient(sweepX - 26, 0, sweepX + 4, 0);
+      band.addColorStop(0, "rgba(124,92,252,0)");
+      band.addColorStop(1, "rgba(124,92,252,.55)");
+      fx.fillStyle = band;
+      fx.fillRect(sweepX - 26, 0, 30, floor.h);
+      fx.fillStyle = "#5A3EB8";
+      fx.fillRect(sweepX, 0, 2, floor.h);
+    }
+  }
+}
+
+function burstConfetti() {
+  if (REDUCED) return;
+  const colours = ["#7C5CFC", "#A18AFF", "#FFD166", "#5A3EB8", "#FFFFFF"];
+  floor.confetti = Array.from({ length: 180 }, () => ({
+    x: Math.random() * innerWidth, y: -20 - Math.random() * innerHeight * 0.5,
+    vx: (Math.random() - 0.5) * 90, vy: 260 + Math.random() * 320,
+    rot: Math.random() * 6.28, vr: (Math.random() - 0.5) * 9,
+    w: 6 + Math.random() * 6, h: 9 + Math.random() * 8,
+    colour: colours[Math.floor(Math.random() * colours.length)]
+  }));
+  floor.confettiAt = performance.now();
+  confettiCanvas.hidden = false;
+  startLoop();
+}
+
+function drawConfetti(now, dt) {
+  const t = (now - floor.confettiAt) / CONFETTI_MS;
+  cx.clearRect(0, 0, innerWidth, innerHeight);
+  if (t >= 1) {
+    floor.confettiAt = 0;
+    floor.confetti = [];
+    confettiCanvas.hidden = true;
+    return;
+  }
+  cx.globalAlpha = t > 0.8 ? (1 - t) / 0.2 : 1;
+  for (const p of floor.confetti) {
+    p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+    cx.save();
+    cx.translate(p.x, p.y);
+    cx.rotate(p.rot);
+    cx.fillStyle = p.colour;
+    cx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+    cx.restore();
+  }
+  cx.globalAlpha = 1;
+}
+
+// The loop parks itself the moment nothing is moving, so a quiet stage costs no frames.
+let lastFrame = 0;
+function busy() {
+  return floor.sweepAt || floor.confettiAt || floor.dots.some((d) => d.pulseAt || d.dissolveAt);
+}
+
+function startLoop() {
+  if (floor.frame) return;
+  lastFrame = performance.now();
+  const step = (now) => {
+    const dt = Math.min(0.05, (now - lastFrame) / 1000);
+    lastFrame = now;
+    drawFloor(now);
+    if (floor.confettiAt) drawConfetti(now, dt);
+    floor.frame = busy() ? requestAnimationFrame(step) : 0;
+  };
+  floor.frame = requestAnimationFrame(step);
+}
+
+function renderFloor() {
+  reconcileFloor();
+  compact();
+  relayout();
+  if (floor.frame) return;        // the loop is already painting this frame
+  drawFloor(performance.now());
+  if (busy()) startLoop();
+}
+
+const floorBase = { member_joined: handlers.member_joined, member_removed: handlers.member_removed, tally: handlers.tally };
+handlers.member_joined = (d) => {
+  floorBase.member_joined(d);
+  const kind = isSimulated(d.client) ? "sim" : "real";
+  addDot(kind, !!d.verified, d.agent_id, kind === "real");
+  relayout();
+  startLoop();
+};
+handlers.member_removed = (d) => {
+  floorBase.member_removed(d);
+  removeDot(d.agent_id);
+};
+handlers.tally = (d) => {
+  floorBase.tally(d);
+  burstConfetti();
+};
+
+sizeFloor();
+addEventListener("resize", () => { sizeFloor(); renderFloor(); });
 
 // --- presenter mode (P11) ----------------------------------------------
 // Hidden unless ?presenter=1. Keys 1–6 POST /demo/beat/{n}, R posts /demo/reset, which keeps
