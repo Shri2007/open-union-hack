@@ -113,6 +113,11 @@
   #strike .big { color: #FF8A93; }
   .sign { width: .9em; height: .9em; vertical-align: -.09em; stroke: #FF8A93; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
   #savings .big { color: var(--white); font-variant-numeric: tabular-nums; }
+  .replay-gate { pointer-events: auto; z-index: 60; }
+  .replay-btn { margin: 22px 0 14px; font: 800 clamp(28px, 4vw, 48px)/1 var(--sans); color: var(--mid); background: var(--white);
+    border: 0; border-radius: 999px; padding: 18px 44px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .replay-btn:focus-visible { outline: 4px solid var(--amber); outline-offset: 4px; }
+  .replay-note { max-width: 640px; margin: 14px auto 0; font-size: 18px; }
   @media (max-height: 1040px) and (min-width: 1101px) { body { zoom: .95; } }
   @media (max-height: 1000px) and (min-width: 1101px) { body { zoom: .92; } }
   @media (max-height: 960px) and (min-width: 1101px) { body { zoom: .88; } }
@@ -154,6 +159,15 @@
       <div class="stat simulated"><div class="n" id="c-simulated">0</div><div class="k">Firedrill members <span class="tag">simulated</span></div></div>
     </div>
   </section>
+</div>
+
+<div class="overlay replay-gate" id="replay-gate" hidden>
+  <div>
+    <div class="small">Open Union · replay of a live run</div>
+    <button type="button" id="replay-play" class="replay-btn">▶ Play the demo</button>
+    <div class="small" id="replay-when"></div>
+    <div class="small replay-note">Every offer, chat line and count comes from the real relay. The vendor and the Firedrill members are simulated. Sound on: the vendor talks.</div>
+  </div>
 </div>
 
 <section class="panel card card--deep vendor-stage a-vendor" aria-label="The vendor">
@@ -275,7 +289,8 @@ async function pollCounts() {
 
 // --- rendering ---------------------------------------------------------
 function render() {
-  $("conn").textContent = state.connected ? "live" : "reconnecting…";
+  $("conn").textContent = document.body.classList.contains("replay") ? "replay · recorded run"
+    : (state.connected ? "live" : "reconnecting…");
   $("conn").className = "conn " + (state.connected ? "live" : "down");
   if (state.need) $("need").textContent = state.need;
 
@@ -654,10 +669,61 @@ if (PRESENTER) {
   window.addEventListener("keydown", onPresenterKey);
 }
 
+// --- replay mode -----------------------------------------------------------
+// ?replay=1 plays web/replay/run.json: a real run recorded from the live relay (every event and member
+// count, with its original timing). It needs no server, so the stage works on a static host or offline.
+const REPLAY = new URLSearchParams(location.search).get("replay") === "1"
+  || location.hostname.endsWith("github.io");
+
+function applySnapshot(counts) {
+  state.baseline = { ...counts };
+  for (const key of COUNT_KEYS) { state.delta[key] = 0; state.counts[key] = counts[key]; }
+}
+
+async function startReplay() {
+  const res = await fetch("replay/run.json");
+  const run = await res.json();
+  state.need = run.coalition_need;
+  state.connected = true;
+  const when = new Date(run.recorded_at);
+  $("replay-when").textContent = "Recorded " + when.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  $("replay-gate").hidden = false;
+  render();
+  $("replay-play").addEventListener("click", () => {
+    $("replay-gate").hidden = true;
+    const t0 = performance.now();
+    let i = 0;
+    const tick = () => {
+      const now = (performance.now() - t0) / 1000;
+      let changed = false;
+      while (i < run.events.length && run.events[i].t <= now) {
+        const e = run.events[i++];
+        if (e.kind === "counts") applySnapshot(e.counts);
+        else if (handlers[e.name]) { try { handlers[e.name](e.data); } catch (err) { /* keep playing */ } }
+        changed = true;
+      }
+      if (changed) render();
+      if (i < run.events.length) requestAnimationFrame(tick);
+      else setTimeout(() => { $("replay-play").textContent = "Play again"; $("replay-gate").hidden = false; }, 9000);
+    };
+    clearRun();
+    state.counts = { verified: 0, unverified: 0, removed: 0, real: 0, simulated: 0 };
+    applySnapshot(state.counts);
+    render();
+    requestAnimationFrame(tick);
+  }, { once: false });
+}
+
 render();
-pollCounts();
-setInterval(pollCounts, COUNT_POLL_MS);
-if (typeof EventSource !== "undefined") connect();
+if (REPLAY) {
+  document.body.classList.add("replay");
+  $("conn").textContent = "replay";
+  startReplay().catch(() => { $("replay-when").textContent = "Could not load the recording."; $("replay-gate").hidden = false; });
+} else {
+  pollCounts();
+  setInterval(pollCounts, COUNT_POLL_MS);
+  if (typeof EventSource !== "undefined") connect();
+}
 </script>
 </body>
 </html>
