@@ -33,7 +33,8 @@
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
   .panel h2 { font-size: 18px; text-transform: uppercase; letter-spacing: 2px; color: var(--dim); margin: 0 0 12px; }
 
-  .price { font-size: 128px; font-weight: 700; line-height: 1; }
+  /* Scales with the projector, and keeps "$58.40/mo" on one line inside the panel. */
+  .price { font-size: min(128px, 6.5vw); font-weight: 700; line-height: 1; white-space: nowrap; }
   .price small { font-size: 34px; color: var(--dim); font-weight: 500; }
   .terms { color: var(--dim); font-size: 20px; margin-top: 10px; min-height: 28px; }
 
