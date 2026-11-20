@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RELAY_URL = os.environ.get("RELAY_URL", "http://localhost:8077")
 SEED_TARGET = int(os.environ.get("DEMO_SEED_MEMBERS", "300"))
 ATTACK_SIZE = int(os.environ.get("DEMO_ATTACK_SIZE", "500"))
+TRAP_PAUSE_SECONDS = float(os.environ.get("DEMO_TRAP_PAUSE", "8"))
 _running = threading.Lock()
 
 TRAP_TERMS = ("$58/month for the first 3 months (introductory rate), then $95/month standard rate. "
@@ -131,7 +132,8 @@ def beat2(cid: str) -> None:
         offer(cid, price_for(n), f"Volume quote for {n} verified lines, 12-month term.")
     chat(cid, "coalition", say("coalition", f"{n} verified members want a phone plan under $60. Ask for a volume price.",
                                f"{n} verified members want a plan under $60. What's your volume price?"))
-    chat(cid, "vendor", say("vendor", f"Quote {dollars(price_for(n))} per line for {n} verified lines, 12-month term.",
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Quote {dollars(price_for(n))} per phone line per month "
+                                      f"for {n} verified people, 12-month term.",
                             f"For {n} verified lines, {dollars(price_for(n))} a month on a 12-month term."))
 
 
@@ -147,7 +149,8 @@ def beat3(cid: str) -> None:
     total = c["verified"] + c["unverified"]
     offer(cid, price_for(total), f"Volume quote for {total} lines (identity not checked).")
     chat(cid, "coalition", f"We now represent {total} lines. {dollars(price_for(total))}.")
-    chat(cid, "vendor", say("vendor", f"Before quoting {total} lines, demand proof they are {total} different people.",
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Before quoting {total} phone lines, "
+                                      f"demand proof they belong to {total} different people.",
                             f"Before I quote {total} lines, prove they're {total} different people."))
 
 
@@ -162,7 +165,8 @@ def beat4(cid: str) -> None:
     n = _s().counts(cid)["verified"]
     chat(cid, "persona", f"{n} verified unique humans. {len(removed)} removed: no verified identity.")
     offer(cid, price_for(n), f"Volume quote for {n} verified lines, 12-month term.")
-    chat(cid, "vendor", say("vendor", f"Accept the verified count of {n}; your quote stands at {dollars(price_for(n))}.",
+    chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Accept that {n} verified people each want one phone line; "
+                                      f"your quote stays {dollars(price_for(n))} per line per month.",
                             f"{n} verified lines. {dollars(price_for(n))} stands."))
     chat(cid, "system", "Fakes removed. The price is back where real people put it.")
 
@@ -178,6 +182,7 @@ def beat5(cid: str) -> None:
         return
     chat(cid, "coalition", "Rejected. $58 that becomes $95 after 3 months, plus fees, is not $58. "
                            "We need $58 fixed for 12 months, no added fees.")
+    time.sleep(TRAP_PAUSE_SECONDS)  # keep the rejected trap check on screen long enough for the room to read it
     chat(cid, "vendor", say("vendor", "Grudgingly agree to $58 a month fixed for 12 months with no added fees.",
                             "Fine. $58 a month, fixed for 12 months, no added fees."))
     offer(cid, 5800, CLEAN_TERMS)
