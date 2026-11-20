@@ -50,9 +50,30 @@
   #v-agent { display: inline-block; white-space: nowrap; font: 600 .9rem/1.3 var(--mono); margin-top: 4px; }
   .headline { font-size: 2.1rem; font-weight: 800; line-height: 1.08; letter-spacing: -.02em; color: var(--mid); max-width: 14ch; }
   .headline.bad { color: var(--bad); max-width: none; font-size: 1.7rem; }
-  .detail { margin: 10px 0 0; max-width: 28ch; }
-  .proof { margin: 0; }
-  .proof a { font-weight: 700; color: var(--white); }
+  .member-card { min-height: 190px; }
+  .member-card dt { margin-top: 12px; }
+  .member-card dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+  .deal-link { display: inline-block; margin-top: 8px; font-weight: 800; color: var(--mid); }
+
+  .room {
+    position: fixed; inset: 0; z-index: 10; display: grid; place-content: center;
+    overflow: auto; padding: 58px max(16px, env(safe-area-inset-right))
+      32px max(16px, env(safe-area-inset-left));
+    color: #fff; text-align: center;
+  }
+  .room[hidden] { display: none; }
+  .room[data-view="accept"] { background: #08743f; }
+  .room[data-view="decline"] { background: #af172c; }
+  .room[data-view="strike"] { background: #181626; }
+  .room-badge {
+    position: absolute; top: calc(16px + env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
+    border: 1px solid currentColor; border-radius: 99px; padding: 4px 10px;
+    font-size: .8rem; font-weight: 800;
+  }
+  .room-title { font-size: clamp(2.35rem, 11vw, 8rem); font-weight: 900; line-height: 1; margin: 0; }
+  .room-title strong { display: block; }
+  .room-detail { font-size: clamp(1.35rem, 6vw, 4rem); font-weight: 750; margin: 12px 0 0; max-width: 24ch; }
+  .room-detail:empty { display: none; }
   .orbit-land { animation: land .9s cubic-bezier(.2, 1, .3, 1) both; }
   @keyframes land { from { opacity: 0; transform: rotate(-35deg) scale(.7); } to { opacity: .9; transform: none; } }
 
@@ -131,12 +152,18 @@
 </section>
 
 <section id="s-closed" class="stack">
-  <div class="card card--white" style="min-height:190px">
+  <article class="card card--white member-card">
     <div class="orbit-art" id="orbit-c" style="width:150px;height:150px"></div>
+    <h2 class="label muted">Open Union · Member card</h2>
     <div class="headline" id="v-result"></div>
-    <p class="detail muted" id="v-result-detail"></p>
-  </div>
-  <div class="card card--navy"><p class="proof">Your price was revealed and can be re-checked by anyone. <a id="c-link" href="/verify.html">Re-check the deal</a></p></div>
+    <dl>
+      <dt class="label muted">Member pseudonym</dt>
+      <dd id="c-agent"></dd>
+      <dt class="label muted">Commitment</dt>
+      <dd><code id="c-commit"></code></dd>
+    </dl>
+    <a class="deal-link" id="c-link" href="/verify.html">Check the deal</a>
+  </article>
   <p class="note">Demo result: the vendor is simulated and nothing was bought.</p>
 </section>
 
@@ -151,6 +178,14 @@
   <code>sha256("&lt;price_cents&gt;:&lt;salt_hex&gt;")</code> until the coalition reaches <code>closing</code>.
 </footer>
 </main>
+
+<div class="room" id="room" hidden>
+  <span class="room-badge" id="room-badge"></span>
+  <div role="status" aria-atomic="true">
+    <p class="room-title"><span id="room-speaker"></span><strong id="room-title"></strong></p>
+    <p class="room-detail" id="room-detail"></p>
+  </div>
+</div>
 
 <script>
 const params = new URLSearchParams(location.search);
@@ -232,6 +267,9 @@ async function sealPrice(priceCents) {
 
 let member = null;  // { coalition_id, agent_id, price_cents, salt_hex, commitment, inquiry_id, verified, joined, revealed }
 let lastOffer = null;
+let stream = null;
+let strikeTimer = null;
+let tally = null;
 
 function persist() { saveSecret(member.coalition_id, member); }
 
@@ -337,12 +375,13 @@ async function joinAndCommit(inquiryId) {
       body: JSON.stringify({ coalition_id: member.coalition_id, agent_id: member.agent_id,
                              inquiry_id: member.inquiry_id }) });
     member.verified = !!check.verified;
+    member.sandbox = check.mode === "sandbox-stub";
     persist();
     logLine("persona check: " + check.status + " (" + check.mode + ") → verified=" + check.verified);
     $("v-agent").textContent = member.agent_id;
     const badge = $("v-verified");
-    badge.textContent = check.mode === "sandbox-stub" ? "verified · sandbox stub" : "verified";
-    badge.className = "tag " + (check.mode === "sandbox-stub" ? "sandbox" : "ok");
+    badge.textContent = member.sandbox ? "verified · sandbox" : "verified";
+    badge.className = "tag " + (member.sandbox ? "sandbox" : "ok");
     if (!check.verified) { badge.textContent = "not verified: " + check.status; badge.className = "tag sandbox"; }
     show("s-joined");
     listen();
@@ -362,8 +401,9 @@ async function joinAndCommit(inquiryId) {
             clearInterval(timer);
             member.verified = true;
             persist();
-            badge.textContent = "verified";
-            badge.className = "tag ok";
+            badge.textContent = member.sandbox ? "verified · sandbox" : "verified";
+            badge.className = "tag " + (member.sandbox ? "sandbox" : "ok");
+            updateRoomBadge();
             logLine("persona check: " + again.status + " → verified");
           }
         } catch (e) { /* keep trying */ }
@@ -376,24 +416,65 @@ async function joinAndCommit(inquiryId) {
 }
 
 // ---- step 4: offers, then REVEAL at close -----------------------------------
+function updateRoomBadge() {
+  const badge = $("v-verified").textContent;
+  $("room-badge").textContent = member.verified ? badge : "not verified";
+}
+
+function setRoom(view, speaker = "", title = "", detail = "") {
+  const room = $("room");
+  room.dataset.view = view;
+  room.hidden = !view;
+  document.querySelector("main").inert = !!view;
+  $("room-speaker").textContent = speaker;
+  $("room-title").textContent = title;
+  $("room-detail").textContent = detail;
+  updateRoomBadge();
+}
+
+function showOffer() {
+  if (!lastOffer) return setRoom("");
+  const price = dollars(lastOffer.price_cents);
+  if (lastOffer.price_cents <= member.price_cents) {
+    setRoom("accept", "Your agent:", "ACCEPT " + price);
+  } else {
+    setRoom("decline", "Your agent:", "NO, " + price, "is above your limit");
+  }
+}
+
 function listen() {
-  const es = new EventSource("/stream?coalition_id=" + encodeURIComponent(member.coalition_id));
-  es.addEventListener("offer", (ev) => {
+  stream = new EventSource("/stream?coalition_id=" + encodeURIComponent(member.coalition_id));
+  stream.addEventListener("offer", (ev) => {
     const offer = JSON.parse(ev.data);
     lastOffer = offer;
     const accept = offer.price_cents <= member.price_cents;  // decided here, from the price the relay can't see
     $("v-offer").textContent = dollars(offer.price_cents) + "/month — " + (accept ? "within your limit" : "above your limit");
+    if (strikeTimer === null) showOffer();
     logLine("offer " + dollars(offer.price_cents) + "; responding accept=" + accept);
     send(member.coalition_id, member.agent_id, "RESPOND", { offer_id: offer.offer_id, accept })
       .catch((e) => logLine("RESPOND failed: " + e.message));
   });
+  stream.addEventListener("strike", (ev) => {
+    const strike = JSON.parse(ev.data);
+    clearTimeout(strikeTimer);
+    setRoom("strike", "", "✊ ON STRIKE", strike.text);
+    strikeTimer = setTimeout(() => {
+      strikeTimer = null;
+      showOffer();
+    }, 6000);
+  });
+  stream.addEventListener("tally", (ev) => { tally = JSON.parse(ev.data); });
 }
 
 async function poll() {
   try {
     const coalition = await api("/coalitions/" + encodeURIComponent(member.coalition_id));
     if (coalition.state === "closing" && !member.revealed) await reveal();
-    if (coalition.state === "closed" && !member.revealed) logLine("coalition closed before this phone revealed");
+    if (coalition.state === "closed") {
+      await showMemberCard();
+      stream.close();
+      return;
+    }
   } catch (e) {
     logLine("status check failed: " + e.message);
   }
@@ -401,27 +482,33 @@ async function poll() {
 }
 
 async function reveal() {
-  member.revealed = true;
-  persist();
   logLine("coalition is closing: revealing price and salt now, for the first time");
   await send(member.coalition_id, member.agent_id, "REVEAL",
              { price_cents: member.price_cents, salt_hex: member.salt_hex });
-  const offers = (await api("/log?coalition_id=" + encodeURIComponent(member.coalition_id)))
-    .filter((row) => row.type === "OFFER");
-  const final = offers.length ? offers[offers.length - 1].body : lastOffer;
+  member.revealed = true;
+  persist();
+}
+
+async function showMemberCard() {
+  const rows = await api("/log?coalition_id=" + encodeURIComponent(member.coalition_id));
+  const summary = rows.findLast((row) => row.type === "SYSTEM" && row.body.kind === "tally");
+  const final = rows.findLast((row) => row.type === "OFFER");
+  const price = summary?.body.offer_price_cents ?? final?.body.price_cents;
+  const revealCheck = rows.findLast((row) => row.type === "SYSTEM"
+    && row.body.kind === "reveal_check" && row.body.agent_id === member.agent_id);
+  const eligibleReveal = tally
+    ? tally.revealed.some((entry) => entry.agent_id === member.agent_id && entry.ok)
+    : member.verified && revealCheck?.body.ok;
+  const inDeal = eligibleReveal && Number.isInteger(price) && price <= member.price_cents;
+
+  clearTimeout(strikeTimer);
+  strikeTimer = null;
+  setRoom("");
+  $("c-agent").textContent = member.agent_id;
+  $("c-commit").textContent = member.commitment.slice(0, 12) + "…";
+  $("v-result").className = inDeal ? "headline ok" : "headline bad";
+  $("v-result").textContent = inDeal ? "Saved " + dollars(8500 - price) + "/month" : "Not in this deal";
   show("s-closed");
-  if (final && final.price_cents <= member.price_cents) {
-    $("v-result").className = "headline ok";
-    $("v-result").textContent = "You save " + dollars(member.price_cents - final.price_cents) + "/month";
-    $("v-result-detail").textContent = "The coalition closed at " + dollars(final.price_cents)
-      + "/month against your limit of " + dollars(member.price_cents) + ".";
-  } else {
-    $("v-result").className = "headline bad";
-    $("v-result").textContent = "Not accepted: the offer was above your limit.";
-    $("v-result-detail").textContent = final
-      ? "The coalition closed at " + dollars(final.price_cents) + "/month; your limit was " + dollars(member.price_cents) + "."
-      : "No vendor offer was recorded for this coalition.";
-  }
 }
 
 // Safari restores this page from its back-forward cache without running scripts again, so reload it.
@@ -445,6 +532,7 @@ window.addEventListener("pageshow", (e) => { if (e.persisted) location.reload();
     $("v-agent").textContent = member.agent_id;
     const badge = $("v-verified");
     if (!member.verified) { badge.textContent = "not verified yet"; badge.className = "tag sandbox"; }
+    else if (member.sandbox) { badge.textContent = "verified · sandbox"; badge.className = "tag sandbox"; }
     show("s-joined");
     listen();
     poll();
