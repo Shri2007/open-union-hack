@@ -109,4 +109,37 @@ class Store:
         return _row(r) if r else None
 
 
+    # demo control
+    def remove_unverified(self, cid: str, reason: str) -> list[str]:
+        """Removes every current member who isn't verified. Returns their agent ids."""
+        rows = self._q("SELECT agent_id FROM members WHERE coalition_id=%s AND removed_reason IS NULL AND NOT verified",
+                       (cid,), "all")
+        self._q("UPDATE members SET removed_reason=%s WHERE coalition_id=%s AND removed_reason IS NULL AND NOT verified",
+                (reason, cid))
+        return [r[0] for r in rows]
+
+    def eligible_agents(self, cid: str) -> set[str]:
+        rows = self._q("SELECT agent_id FROM members WHERE coalition_id=%s AND removed_reason IS NULL AND verified",
+                       (cid,), "all")
+        return {r[0] for r in rows}
+
+    def count_type(self, cid: str, msg_type: str) -> int:
+        r = self._q("SELECT COUNT(*) FROM log WHERE coalition_id=%s AND type=%s", (cid, msg_type), "one")
+        return int(r[0])
+
+    def reset(self, cid: str, hard: bool = False) -> None:
+        """Soft: drop simulated members and every run artifact, keep real members' JOIN and COMMIT. Hard: wipe all."""
+        if hard:
+            self._q("DELETE FROM log WHERE coalition_id=%s", (cid,))
+            self._q("DELETE FROM members WHERE coalition_id=%s", (cid,))
+        else:
+            self._q("DELETE FROM log WHERE coalition_id=%s AND agent_id IN "
+                    "(SELECT agent_id FROM members WHERE coalition_id=%s AND client NOT IN ('web','mcp'))", (cid, cid))
+            self._q("DELETE FROM members WHERE coalition_id=%s AND client NOT IN ('web','mcp')", (cid,))
+            self._q("DELETE FROM log WHERE coalition_id=%s AND (agent_id IN ('vendor','system') "
+                    "OR type IN ('OFFER','RESPOND','REVEAL','SYSTEM'))", (cid,))
+            self._q("UPDATE members SET removed_reason=NULL WHERE coalition_id=%s", (cid,))
+        self._q("UPDATE coalitions SET state='open' WHERE id=%s", (cid,))
+
+
 store = Store()
