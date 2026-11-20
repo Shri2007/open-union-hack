@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scam the Union: vendor console (simulated)</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --dim:#9aa3b5; --bad:#ff5d5d; --good:#4cd38b; --warn:#ffb84d; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:16px/1.45 system-ui, sans-serif; max-width:760px; margin-inline:auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .tag { display:inline-block; font-size:12px; padding:2px 8px; border:1px solid var(--warn); color:var(--warn); border-radius:99px; vertical-align:middle; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin:14px 0; }
+  label { display:block; font-size:13px; color:var(--dim); margin:10px 0 4px; }
+  input, textarea { width:100%; padding:10px; border-radius:8px; border:1px solid var(--line); background:#0f1115; color:var(--text); font:inherit; }
+  textarea { min-height:80px; resize:vertical; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button { padding:10px 14px; border-radius:8px; border:1px solid var(--line); background:#232836; color:var(--text); font:inherit; cursor:pointer; }
+  button.primary { background:#2f5bea; border-color:#2f5bea; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .warn { border-color:var(--warn); color:var(--warn); }
+  .verdict { font-size:28px; font-weight:700; }
+  .reject { color:var(--bad); } .pass { color:var(--good); } .ask_member { color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .p-high { color:var(--bad); font-weight:700; }
+  .dim { color:var(--dim); font-size:13px; }
+  .err { color:var(--bad); }
+</style>
+</head>
+<body>
+<h1>Scam the Union <span class="tag">simulated vendor</span></h1>
+<p class="dim">Try offers on the coalition. Senso finds the fine print, TypeSafe answers three trap questions, and code decides. Nothing here is a real vendor or a real purchase.</p>
+
+<div id="demoWarn" class="card warn" hidden>This is the live demo coalition. Offers sent from here will show on the stage screen.</div>
+
+<div class="card">
+  <label for="cid">Coalition id (use your own test coalition)</label>
+  <input id="cid" autocomplete="off">
+  <label for="price">Offer price per month (USD)</label>
+  <input id="price" type="number" min="1" step="1" value="58">
+  <label for="terms">Offer terms (simulated vendor text)</label>
+  <textarea id="terms"></textarea>
+  <div class="row">
+    <button type="button" id="presetTrap">Load trap offer</button>
+    <button type="button" id="presetClean">Load clean offer</button>
+    <button type="button" id="check" class="primary">Check offer</button>
+  </div>
+</div>
+
+<div id="result" class="card" hidden>
+  <div class="dim">Verdict (decided in code)</div>
+  <div id="verdict" class="verdict"></div>
+  <div id="note" class="dim"></div>
+  <h3>Trap questions</h3>
+  <table><thead><tr><th>Question</th><th>p</th></tr></thead><tbody id="qs"></tbody></table>
+  <h3>Senso citations</h3>
+  <table><thead><tr><th>content</th><th>version</th><th>score</th></tr></thead><tbody id="cites"></tbody></table>
+  <div class="row"><button type="button" id="send" disabled>Send as OFFER to the log (simulated vendor)</button></div>
+  <div id="sendMsg" class="dim"></div>
+</div>
+<div id="error" class="err"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const DEMO = "demo-phone-plan";
+const PRESETS = {
+  trap:  { price: 58, terms: "$58/mo for 3 months, then $95/mo. 24-month contract." },
+  clean: { price: 58, terms: "$58/mo fixed for 12 months, no added fees." },
+};
+let last = null;
+
+$("cid").value = new URLSearchParams(location.search).get("c") || "ali-test";
+$("terms").value = PRESETS.trap.terms;
+function warnDemo() { $("demoWarn").hidden = $("cid").value.trim() !== DEMO; }
+$("cid").addEventListener("input", warnDemo); warnDemo();
+
+function load(p) { $("price").value = p.price; $("terms").value = p.terms; }
+$("presetTrap").onclick = () => load(PRESETS.trap);
+$("presetClean").onclick = () => load(PRESETS.clean);
+
+function cell(tr, text, cls) { const td = document.createElement("td"); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); }
+
+$("check").onclick = async () => {
+  $("error").textContent = ""; $("result").hidden = true; $("send").disabled = true; last = null;
+  const body = { coalition_id: $("cid").value.trim(), price_cents: Math.round(Number($("price").value) * 100), terms_text: $("terms").value.trim() };
+  $("check").disabled = true;
+  try {
+    const r = await fetch("/offer-check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { $("error").textContent = "Check failed: " + (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || r.status)); return; }
+    last = { body, data };
+    $("verdict").textContent = data.verdict.replace("_", " ").toUpperCase();
+    $("verdict").className = "verdict " + data.verdict;
+    $("note").textContent = data.note || "";
+    $("qs").replaceChildren(...data.questions.map(q => { const tr = document.createElement("tr"); cell(tr, q.q); cell(tr, q.p.toFixed(2), q.p >= 0.30 ? "p-high" : ""); return tr; }));
+    $("cites").replaceChildren(...data.senso.map(s => { const tr = document.createElement("tr"); cell(tr, String(s.content_id).slice(0, 8)); cell(tr, String(s.version_id).slice(0, 8)); cell(tr, s.score == null ? "" : Number(s.score).toFixed(3)); return tr; }));
+    $("sendMsg").textContent = "";
+    $("send").disabled = false;
+    $("result").hidden = false;
+  } catch (e) { $("error").textContent = "Network error: " + e.message; }
+  finally { $("check").disabled = false; }
+};
+
+$("send").onclick = async () => {
+  if (!last) return;
+  if (last.body.coalition_id === DEMO && !confirm("This coalition is the live demo. Send the offer to the stage screen?")) return;
+  const { body, data } = last;
+  const msg = { coalition_id: body.coalition_id, agent_id: "vendor", type: "OFFER", body: {
+    price_cents: body.price_cents, terms_text: body.terms_text,
+    senso_content_ids: data.senso.map(s => s.content_id), trap_checks: data.questions } };
+  const r = await fetch("/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(msg) });
+  $("sendMsg").textContent = r.ok ? "Sent as a simulated OFFER." : "Send failed: HTTP " + r.status;
+};
+</script>
+</body>
+</html>

@@ -10,6 +10,8 @@ from app import config, db
 from app.protocol import DEMO_COALITION_ID, DEMO_COALITION_NEED
 from app.matching import router as matching_router
 from app.negotiation import router as negotiation_router
+from app.offer_check import router as offer_check_router
+from app.persona import router as persona_router
 from app.relay import router as relay_router
 from app.store import store
 
@@ -38,6 +40,8 @@ app = FastAPI(title="Open Union", lifespan=lifespan)
 app.include_router(matching_router)  # before relay: /coalitions/match must win over /coalitions/{id}
 app.include_router(relay_router)
 app.include_router(negotiation_router)
+app.include_router(persona_router)
+app.include_router(offer_check_router)
 
 
 @app.get("/health")
