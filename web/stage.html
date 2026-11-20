@@ -22,8 +22,8 @@
   .board { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; margin-top: 16px;
     grid-template-areas:
       "offer offer offer members members members members members members members members members"
-      "vendor vendor vendor chart chart chart chart chat chat chat chat chat"
-      "trap trap trap trap trap trap tally tally tally tally tally tally"; }
+      "vendor vendor vendor vendor chart chart chart chart chat chat chat chat"
+      "vendor vendor vendor vendor trap trap trap trap tally tally tally tally"; }
   .top, .grid { display: contents; }
   .a-offer { grid-area: offer; } .a-members { grid-area: members; } .a-vendor { grid-area: vendor; }
   .a-offer .orbit-art { width: 90px; height: 90px; top: -26px; right: -22px; }
@@ -97,12 +97,13 @@
   #presenter .status { margin-top: 8px; font-size: 13px; color: var(--pale); min-height: 17px; }
   #presenter .status.err { color: #FF8A93; font-weight: 700; }
   /* Pixel vendor: the original pixel-art sales rep, framed as the deep-purple card. The sprite itself is drawn in code. */
-  .vendor-stage { display: grid; grid-template-columns: 120px 1fr; grid-template-rows: auto auto; gap: 12px 16px; align-items: center; }
+  /* The vendor is the show's main character: a tall card down the left, sprite as big as the card allows. */
+  .vendor-stage { display: flex; flex-direction: column; align-items: center; gap: 14px; }
   .vendor-stage > div { display: contents; }
-  #vendor-sprite { grid-column: 1; grid-row: 1; width: 120px; height: 120px; image-rendering: pixelated; background: var(--navy); border-radius: 12px; border: 2px solid rgba(255,255,255,.4); }
-  .mood { grid-column: 2; grid-row: 1; font-size: 22px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--white); }
-  .bubble { grid-column: 1 / -1; grid-row: 2; position: relative; background: var(--white); color: var(--ink); border-radius: 12px; padding: 12px 16px; font: 600 clamp(16px, 1.3vw, 22px)/1.35 var(--sans); min-height: 96px; }
-  .bubble::before { content: ""; position: absolute; left: 44px; top: -11px; border: 0 solid transparent; border-width: 0 10px 12px 10px; border-bottom-color: var(--white); }
+  #vendor-sprite { width: min(100%, 300px, 34vh); height: auto; aspect-ratio: 1; image-rendering: pixelated; background: var(--navy); border-radius: 14px; border: 3px solid rgba(255,255,255,.45); }
+  .mood { order: -1; align-self: stretch; text-align: center; font-size: 22px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--white); }
+  .bubble { align-self: stretch; position: relative; background: var(--white); color: var(--ink); border-radius: 12px; padding: 14px 18px; font: 600 clamp(18px, 1.5vw, 26px)/1.35 var(--sans); min-height: 120px; }
+  .bubble::before { content: ""; position: absolute; left: 50%; margin-left: -10px; top: -11px; border: 0 solid transparent; border-width: 0 10px 12px 10px; border-bottom-color: var(--white); }
   .bubble .name { display: block; font-size: 18px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--mid); margin-bottom: 4px; }
   /* full-screen moments: the walkout strike and the room's savings */
   .overlay { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50; pointer-events: none; background: rgba(26,26,46,.93); text-align: center; color: var(--white); }
