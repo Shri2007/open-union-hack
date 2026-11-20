@@ -229,6 +229,54 @@ def union_status(coalition_id: str) -> dict:
 
 
 @mcp.tool()
+def union_verify(coalition_id: str) -> dict:
+    """Prove the person behind this agent is a unique human (Persona), so they count toward the group.
+
+    First call: returns a one-time Persona link for the person to open in a browser. After they finish,
+    call union_verify again: the relay asks Persona itself and marks this member verified. Unverified
+    members are removed before any price is accepted.
+    """
+    secret, problem = _sealed(coalition_id)
+    if problem:
+        return problem
+    agent_id = secret["agent_id"]
+
+    if secret.get("inquiry_id"):
+        try:
+            check = _post("/persona/callback", {"coalition_id": coalition_id, "agent_id": agent_id,
+                                                "inquiry_id": secret["inquiry_id"]})
+        except Exception as exc:
+            return _error(exc)
+        if check.get("verified"):
+            return {"status": "verified", "agent_id": agent_id, "mode": check.get("mode"),
+                    "note": "This member now counts toward the coalition's verified headcount."}
+        return {"status": "pending", "persona_status": check.get("status"), "url": secret.get("verify_url"),
+                "next_step": "Ask the person to finish the Persona link, then call union_verify again."}
+
+    try:
+        started = _post("/persona/start", {"coalition_id": coalition_id, "agent_id": agent_id})
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409:  # no Persona on this relay: its labeled sandbox stub applies
+            try:
+                check = _post("/persona/callback", {"coalition_id": coalition_id, "agent_id": agent_id})
+            except Exception as inner:
+                return _error(inner)
+            return {"status": "verified" if check.get("verified") else "not_verified", "mode": check.get("mode"),
+                    "note": "This relay has no Persona key, so it used its labeled sandbox stub."}
+        return _error(exc)
+    except Exception as exc:
+        return _error(exc)
+
+    with _locked():
+        record = _secret(coalition_id) or secret
+        record["inquiry_id"], record["verify_url"] = started["inquiry_id"], started["url"]
+        _store_secret(coalition_id, record)
+    return {"status": "verification_started", "url": started["url"],
+            "next_step": "Give the person this link to open in a browser. When Persona says they're done, "
+                         "call union_verify again."}
+
+
+@mcp.tool()
 def union_respond(coalition_id: str) -> dict:
     """Accept or decline the latest offer. The decision is a comparison in code, not a judgment call."""
     secret, problem = _sealed(coalition_id)

@@ -91,7 +91,7 @@ pytest
 
 ## Let any agent join (MCP)
 
-`union_mcp/` is a local MCP server (stdio) that lets Claude Desktop, Cursor or any MCP client act as a member. Its five tools are `union_find`, `union_join`, `union_status`, `union_respond` and `union_reveal`. The walk-away price and salt stay in `~/.open-union/secrets.json` on your machine, and the accept decision is computed in code, not by the model.
+`union_mcp/` is a local MCP server (stdio) that lets Claude Desktop, Cursor or any MCP client act as a member. Its five tools are `union_find`, `union_join`, `union_status`, `union_verify`, `union_respond` and `union_reveal`. The walk-away price and salt stay in `~/.open-union/secrets.json` on your machine, and the accept decision is computed in code, not by the model.
 
 Print the exact config for your machine and paste it into `claude_desktop_config.json`:
 

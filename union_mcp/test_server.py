@@ -195,7 +195,7 @@ def test_reveal_sends_price_and_salt_once_closing(relay):
     assert server.commitment_for(reveal["price_cents"], reveal["salt_hex"]) == result["commitment"]
 
 
-def test_stdio_server_lists_its_five_tools():
+def test_stdio_server_lists_its_six_tools():
     """Start the server as Claude Desktop would and read the tool list off stdio."""
     proc = subprocess.Popen(
         [sys.executable, str(Path(server.__file__).resolve())],
@@ -217,5 +217,5 @@ def test_stdio_server_lists_its_five_tools():
     finally:
         proc.kill()
     assert sorted(t["name"] for t in tools) == [
-        "union_find", "union_join", "union_respond", "union_reveal", "union_status"]
+        "union_find", "union_join", "union_respond", "union_reveal", "union_status", "union_verify"]
     assert "claude_desktop_config.json" in proc.stderr.read()
