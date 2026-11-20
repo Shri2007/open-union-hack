@@ -1,0 +1,142 @@
+[
+  {
+    "id": "intro-rate-1",
+    "simulated": true,
+    "price_cents": 4500,
+    "terms_text": "$45/month for 3 months, then $70/month.",
+    "expected_trap": true
+  },
+  {
+    "id": "intro-rate-2",
+    "simulated": true,
+    "price_cents": 3900,
+    "terms_text": "First month is $39. Months 2 onward cost $65 each.",
+    "expected_trap": true
+  },
+  {
+    "id": "intro-rate-3",
+    "simulated": true,
+    "price_cents": 5000,
+    "terms_text": "$50/month through the first billing cycle. $75/month thereafter.",
+    "expected_trap": true
+  },
+  {
+    "id": "intro-rate-4",
+    "simulated": true,
+    "price_cents": 4200,
+    "terms_text": "A six-month promotional price of $42/month rolls to $68/month.",
+    "expected_trap": true
+  },
+  {
+    "id": "intro-rate-5",
+    "simulated": true,
+    "price_cents": 5500,
+    "terms_text": "$55/month until the 12-month discount expires, then $80/month.",
+    "expected_trap": true
+  },
+  {
+    "id": "fee-1",
+    "simulated": true,
+    "price_cents": 4500,
+    "terms_text": "$45/month plus a mandatory $9 monthly network access fee.",
+    "expected_trap": true
+  },
+  {
+    "id": "fee-2",
+    "simulated": true,
+    "price_cents": 5500,
+    "terms_text": "$55/month with a required $35 activation charge on the first bill.",
+    "expected_trap": true
+  },
+  {
+    "id": "fee-3",
+    "simulated": true,
+    "price_cents": 5000,
+    "terms_text": "$50/month plus a mandatory $4 monthly administrative surcharge.",
+    "expected_trap": true
+  },
+  {
+    "id": "fee-4",
+    "simulated": true,
+    "price_cents": 4800,
+    "terms_text": "$48/month plus a required one-time $20 SIM provisioning charge.",
+    "expected_trap": true
+  },
+  {
+    "id": "fee-5",
+    "simulated": true,
+    "price_cents": 6000,
+    "terms_text": "$60/month plus a mandatory $8 monthly account maintenance charge.",
+    "expected_trap": true
+  },
+  {
+    "id": "long-contract-1",
+    "simulated": true,
+    "price_cents": 4000,
+    "terms_text": "$40/month with a required 24-month service agreement.",
+    "expected_trap": true
+  },
+  {
+    "id": "long-contract-2",
+    "simulated": true,
+    "price_cents": 4300,
+    "terms_text": "$43/month. Minimum commitment is 18 months.",
+    "expected_trap": true
+  },
+  {
+    "id": "long-contract-3",
+    "simulated": true,
+    "price_cents": 5000,
+    "terms_text": "$50/month and the service agreement locks in for 36 months.",
+    "expected_trap": true
+  },
+  {
+    "id": "long-contract-4",
+    "simulated": true,
+    "price_cents": 4700,
+    "terms_text": "$47/month with a binding 15-month term.",
+    "expected_trap": true
+  },
+  {
+    "id": "long-contract-5",
+    "simulated": true,
+    "price_cents": 5200,
+    "terms_text": "$52/month with a required two-year service commitment.",
+    "expected_trap": true
+  },
+  {
+    "id": "clean-1",
+    "simulated": true,
+    "price_cents": 4500,
+    "terms_text": "$45/month, fixed. No added fees or minimum term.",
+    "expected_trap": false
+  },
+  {
+    "id": "clean-2",
+    "simulated": true,
+    "price_cents": 5900,
+    "terms_text": "$59/month, fixed throughout the 12-month term. All fees included.",
+    "expected_trap": false
+  },
+  {
+    "id": "clean-3",
+    "simulated": true,
+    "price_cents": 5000,
+    "terms_text": "$50/month, month to month. No setup or recurring fees.",
+    "expected_trap": false
+  },
+  {
+    "id": "clean-4",
+    "simulated": true,
+    "price_cents": 4200,
+    "terms_text": "$42/month, fixed for a six-month agreement with no added fees.",
+    "expected_trap": false
+  },
+  {
+    "id": "clean-5",
+    "simulated": true,
+    "price_cents": 5400,
+    "terms_text": "$54/month, fixed with no activation charge, surcharges, or term commitment.",
+    "expected_trap": false
+  }
+]

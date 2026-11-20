@@ -1,0 +1,28 @@
+{
+  "schema": "firedrill.native-world.v1",
+  "name": "Open Union relay drills",
+  "description": "Simulated join verification and offer screening on a dedicated test coalition.",
+  "dependencies": [],
+  "resources": [
+    {
+      "origin": "native_library",
+      "kind": "scenario",
+      "id": "71f03784-3a1c-4a17-a0d4-0fbbd3fa8cd4",
+      "revision": 1,
+      "digest": "314a101717f2e55e95bbf6f6a40279908b41e08797051b942fe8e9b80114fb1d"
+    },
+    {
+      "origin": "native_library",
+      "kind": "scenario",
+      "id": "2d80b550-d2a5-4eb3-98df-ab05b6efdb24",
+      "revision": 1,
+      "digest": "a7a7227ff429c3cddfd45886a8f0b75b2110386d0edbffa264ea251419b9105a"
+    }
+  ],
+  "configuration_names": [],
+  "execution": {
+    "repetitions": 1,
+    "max_parallel": 1,
+    "reset": "per_drill"
+  }
+}

@@ -1,8 +1,226 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Open Union · Verify the deal</title></head>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Union · Verify the deal</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 14px 48px;
+    background: #0b0e14; color: #e8ecf4;
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  h1 { font-size: 1.35rem; margin: 0 0 6px; }
+  .note {
+    border: 1px solid #2a3550; background: #121829; border-radius: 10px;
+    padding: 10px 12px; margin: 10px 0 18px; font-size: 0.93rem; color: #b9c4dc;
+  }
+  .meta { font-size: 0.85rem; color: #8694b4; margin-bottom: 14px; word-break: break-all; }
+  .headline { font-size: 2.3rem; font-weight: 700; line-height: 1.15; margin: 0 0 4px; }
+  .headline.ok { color: #4ade80; }
+  .headline.bad { color: #f87171; }
+  .headline.none { color: #8694b4; }
+  .sub { font-size: 1.05rem; color: #c6d0e6; margin: 0 0 4px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 22px; }
+  .card { flex: 1 1 140px; border: 1px solid #222c45; background: #111728; border-radius: 10px; padding: 10px 12px; }
+  .card .k { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8694b4; }
+  .card .v { font-size: 1.5rem; font-weight: 700; }
+  .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; min-width: 420px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #1e2740; vertical-align: top; }
+  th { color: #8694b4; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cell { display: block; min-width: 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+  .tag { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+  .tag.match { background: #15361f; color: #6ee79b; }
+  .tag.mismatch { background: #3a1517; color: #ff8d8d; }
+  .tag.missing { background: #1d2437; color: #93a1c0; }
+  .tag.sim { background: #3a2d10; color: #f0c674; margin-left: 6px; }
+  .why { display: block; color: #8694b4; font-size: 0.78rem; }
+  .err { border: 1px solid #5a2126; background: #2a1316; color: #ffb4b4; border-radius: 10px; padding: 12px; }
+  /* Phone: stack each row so the mismatch reason reads without horizontal scrolling. */
+  @media (max-width: 480px) {
+    .scroll { overflow-x: visible; }
+    table { min-width: 0; }
+    thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    tbody tr { display: block; border: 1px solid #222c45; background: #111728; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+    tbody td { display: grid; grid-template-columns: 7.5em minmax(0, 1fr); gap: 10px; border: none; padding: 3px 0; }
+    tbody td::before { content: attr(data-label); color: #8694b4; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; line-height: 1.6; }
+    tbody td.empty { display: block; }
+    tbody td.empty::before { content: none; }
+    .why { margin-top: 2px; }
+  }
+  footer { margin-top: 26px; font-size: 0.8rem; color: #6f7d9c; }
+</style>
+</head>
 <body>
 <h1>Verify the deal</h1>
-<p>Coming soon.</p>
+<p class="note">This page checks the deal in your browser. It does not trust the server's tally.</p>
+<p class="meta" id="meta">Loading the public log…</p>
+
+<div id="summary"></div>
+<div id="body"></div>
+
+<footer>
+  Every number here is recomputed from <code>/log</code> with <code>crypto.subtle</code> in this browser:
+  each member's <code>sha256("&lt;price_cents&gt;:&lt;salt_hex&gt;")</code> against the commitment it published before any offer.
+</footer>
+
+<script>
+const REAL_CLIENTS = ["web", "mcp"];
+const NON_MEMBER_AGENTS = ["vendor", "system"];
+
+const params = new URLSearchParams(location.search);
+const coalitionId = params.get("c") || "demo-phone-plan";
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const dollars = (cents) => "$" + (cents / 100).toFixed(2);
+const short = (hex) => hex ? hex.slice(0, 10) + "…" + hex.slice(-6) : "—";
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function collectAgents(log) {
+  // A log can hold members from earlier runs, so verify every agent that appears, not one clean run.
+  const agents = new Map();
+  for (const row of log) {
+    const id = row.agent_id;
+    if (NON_MEMBER_AGENTS.includes(id)) continue;
+    if (!["JOIN", "COMMIT", "REVEAL", "INTENT", "RESPOND"].includes(row.type)) continue;
+    if (!agents.has(id)) {
+      agents.set(id, { agent_id: id, client: null, commit: null, commits: 0, reveal: null, reveals: 0 });
+    }
+    const a = agents.get(id);
+    const body = row.body || {};
+    if (row.type === "JOIN") a.client = body.client || a.client;
+    if (row.type === "COMMIT") { a.commit = body.commitment || null; a.commits += 1; }
+    if (row.type === "REVEAL") { a.reveal = body; a.reveals += 1; }
+  }
+  return [...agents.values()];
+}
+
+function finalOffer(log) {
+  let offer = null;
+  for (const row of log) if (row.type === "OFFER") offer = row;
+  return offer;
+}
+
+async function verifyAgent(a, offerCents) {
+  const out = { ...a, simulated: a.client !== null && !REAL_CLIENTS.includes(a.client) };
+  if (!a.reveal) {
+    out.status = "missing";
+    out.why = a.commit ? "no REVEAL in the log" : "no COMMIT and no REVEAL in the log";
+    return out;
+  }
+  if (typeof a.reveal.price_cents !== "number" || typeof a.reveal.salt_hex !== "string") {
+    // A REVEAL that exists but can't be hashed is a failed check, never a silent absence.
+    out.status = "mismatch";
+    out.why = "REVEAL in the log is malformed: price_cents or salt_hex is missing or the wrong type";
+    return out;
+  }
+  out.price_cents = a.reveal.price_cents;
+  out.recomputed = await sha256Hex(`${a.reveal.price_cents}:${a.reveal.salt_hex}`);
+  if (!a.commit) {
+    out.status = "mismatch";
+    out.why = "revealed a price with no commitment in the log";
+    return out;
+  }
+  out.status = out.recomputed === a.commit ? "match" : "mismatch";
+  if (out.status === "mismatch") out.why = "recomputed hash " + short(out.recomputed) + " ≠ commitment";
+  if (out.status === "match" && offerCents !== null) {
+    out.accepts = out.price_cents >= offerCents;
+  }
+  return out;
+}
+
+function render(rows, offer, log) {
+  const offerCents = offer ? offer.body.price_cents : null;
+  const checked = rows.filter((r) => r.status !== "missing");
+  const matched = checked.filter((r) => r.status === "match");
+  const mismatched = checked.filter((r) => r.status === "mismatch");
+  const notRevealed = rows.filter((r) => r.status === "missing");
+  const accepted = matched.filter((r) => r.accepts === true);
+
+  const klass = checked.length === 0 ? "none" : (mismatched.length === 0 ? "ok" : "bad");
+  document.getElementById("summary").innerHTML = `
+    <p class="headline ${klass}">${matched.length} of ${checked.length} commitments match</p>
+    <p class="sub">${accepted.length} of ${matched.length} members with a matching commitment accept this offer
+      ${offerCents === null ? "(no OFFER in the log yet)" : "at " + esc(dollars(offerCents)) + "/month"}.</p>
+    <div class="cards">
+      <div class="card"><div class="k">Agents in log</div><div class="v">${rows.length}</div></div>
+      <div class="card"><div class="k">Mismatched</div><div class="v">${mismatched.length}</div></div>
+      <div class="card"><div class="k">Not revealed</div><div class="v">${notRevealed.length}</div></div>
+      <div class="card"><div class="k">Accepted</div><div class="v">${accepted.length}</div></div>
+    </div>`;
+
+  const tbody = rows.map((r) => {
+    const tag = r.status === "match" ? '<span class="tag match">match</span>'
+      : r.status === "mismatch" ? '<span class="tag mismatch">mismatch</span>'
+      : '<span class="tag missing">not revealed</span>';
+    const sim = r.simulated ? ` <span class="tag sim">simulated · ${esc(r.client)}</span>` : "";
+    const price = typeof r.price_cents === "number" ? esc(dollars(r.price_cents)) : "—";
+    const accepts = r.status !== "match" ? "—" : (r.accepts === undefined ? "—" : (r.accepts ? "yes" : "no"));
+    const why = r.why ? `<span class="why">${esc(r.why)}</span>` : "";
+    const dupes = [];
+    if (r.commits > 1) dupes.push(r.commits + " COMMITs, latest used");
+    if (r.reveals > 1) dupes.push(r.reveals + " REVEALs, latest used");
+    const note = dupes.length ? `<span class="why">${esc(dupes.join("; "))}</span>` : "";
+    return `<tr>
+      <td data-label="Pseudonym"><span class="cell">${esc(r.agent_id)}${sim}${note}</span></td>
+      <td data-label="Commitment"><span class="cell"><code>${esc(short(r.commit))}</code></span></td>
+      <td data-label="Revealed price"><span class="cell">${price}</span></td>
+      <td data-label="Check"><span class="cell">${tag}${why}</span></td>
+      <td data-label="Accepts"><span class="cell">${accepts}</span></td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("body").innerHTML = `
+    <div class="scroll"><table>
+      <thead><tr><th>Pseudonym</th><th>Commitment</th><th>Revealed price</th><th>Check</th><th>Accepts</th></tr></thead>
+      <tbody>${tbody || '<tr><td class="empty" colspan="5">No member agents in this log yet.</td></tr>'}</tbody>
+    </table></div>`;
+
+  const terms = offer ? ` · final offer ${dollars(offerCents)}/month — ${offer.body.terms_text}` : " · no OFFER yet";
+  document.getElementById("meta").textContent =
+    `Coalition ${coalitionId} · ${log.length} log entries${terms}`;
+}
+
+async function main() {
+  if (!window.isSecureContext || !crypto.subtle) {
+    document.getElementById("body").innerHTML =
+      '<p class="err">This browser will not expose crypto.subtle here, so nothing can be verified. ' +
+      'Open the page over https or on localhost.</p>';
+    return;
+  }
+  let log;
+  try {
+    const res = await fetch(`/log?coalition_id=${encodeURIComponent(coalitionId)}`);
+    if (!res.ok) throw new Error(`/log returned ${res.status}`);
+    log = await res.json();
+    if (!Array.isArray(log)) throw new Error("/log did not return a list of messages");
+  } catch (e) {
+    document.getElementById("meta").textContent = "";
+    document.getElementById("body").innerHTML =
+      `<p class="err">Could not read the public log: ${esc(e.message)}</p>`;
+    return;
+  }
+  const offer = finalOffer(log);
+  const offerCents = offer ? offer.body.price_cents : null;
+  const rows = [];
+  for (const a of collectAgents(log)) rows.push(await verifyAgent(a, offerCents));
+  rows.sort((x, y) => {
+    const rank = { mismatch: 0, match: 1, missing: 2 };
+    return rank[x.status] - rank[y.status] || x.agent_id.localeCompare(y.agent_id);
+  });
+  render(rows, offer, log);
+}
+
+main();
+</script>
 </body>
 </html>

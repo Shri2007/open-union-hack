@@ -1,0 +1,39 @@
+{
+  "schema": "firedrill.local-descriptor.v1",
+  "source_roots": [
+    {
+      "alias": "app",
+      "identity_sha256": "03c9cd3e5526206df4eb26f6331f40be78a791cdf9a082e2e177a85c178c4497"
+    }
+  ],
+  "services": [
+    {
+      "alias": "adapter",
+      "root_alias": "app",
+      "role": "agent",
+      "depends_on": [],
+      "configuration": []
+    }
+  ],
+  "entry_service": "adapter",
+  "driver": {
+    "profile": "http.v1",
+    "adapter_sha256": "1baf011d1eac83d0603b109545f85bfe1cc30c252f5bf4fe2020c3a6dd5241e2",
+    "authentication": "anonymous",
+    "state_domains": [
+      "test-coalition"
+    ]
+  },
+  "state_domains": [
+    {
+      "alias": "test-coalition",
+      "service_alias": "adapter",
+      "kind": "database",
+      "location": "local",
+      "reset": "approved-hook",
+      "concurrency": "serial",
+      "hook_sha256": "5123beb875c271a02a1953707a8695d73b8380c8a730587817d337b8588a036d"
+    }
+  ],
+  "dependencies": []
+}
