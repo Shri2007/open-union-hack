@@ -122,9 +122,12 @@
   #strike .big { color: #FF8A93; }
   .sign { width: .9em; height: .9em; vertical-align: -.09em; stroke: #FF8A93; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
   #savings .big { color: var(--white); font-variant-numeric: tabular-nums; }
-  .join-card { position: fixed; left: 18px; bottom: 18px; z-index: 9; display: flex; gap: 14px; align-items: center;
+  .join-card { position: fixed; right: 18px; bottom: 18px; z-index: 9; display: flex; gap: 14px; align-items: center;
     background: var(--white); color: var(--ink); border-radius: 14px; padding: 12px 18px 12px 12px; box-shadow: 0 10px 30px rgba(26,26,46,.45); }
   .join-card[hidden] { display: none; }
+  /* Presenter panel sits above the join card so the two never overlap. */
+  body.presenter:has(.join-card:not([hidden])) #presenter { bottom: 222px; }
+  body.presenter.panel-hidden #presenter { display: none; }
   .join-card img { width: 168px; height: 168px; display: block; }
   .join-text { display: flex; flex-direction: column; gap: 6px; max-width: 220px; }
   .join-text b { font-size: 30px; font-weight: 800; color: var(--mid); line-height: 1; }
@@ -245,6 +248,7 @@
   <ol id="beats"></ol>
   <div class="reset"><b>W</b> walkout (phones strike)</div>
   <div class="reset"><b>V</b> vendor voice on/off</div>
+  <div class="reset"><b>H</b> hide this panel (keys still work) · <b>Q</b> hide QR</div>
   <div class="reset" id="p-reset"><b>R</b> reset (keeps real members)</div>
   <div class="status" id="p-status"></div>
 </aside>
@@ -990,6 +994,8 @@ function onPresenterKey(ev) {
     const n = Number(ev.key);
     ev.preventDefault();
     trigger(`/demo/beat/${n}`, `beat ${n}`, Math.min(n + 1, 6));
+  } else if (ev.key === "h" || ev.key === "H") {
+    document.body.classList.toggle("panel-hidden");  // hide the panel for recording; the keys keep working
   } else if (ev.key === "w" || ev.key === "W") {
     ev.preventDefault();
     trigger("/demo/beat/7", "walkout", state.presenter.next);
