@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 
 from union_mcp import server
@@ -99,9 +100,39 @@ def test_join_seals_the_price_locally(relay):
     assert sent["COMMIT"] == {"commitment": result["commitment"]}
     assert "price_cents" not in json.dumps(sent)
 
-    stored = json.loads(server.SECRETS_PATH.read_text())[COALITION]
-    assert stored["price_cents"] == 6200
+    stored = json.loads(server.SECRETS_PATH.read_text())[server._key(COALITION)]
+    assert stored["price_cents"] == 6200 and "pending" not in stored
     assert server.SECRETS_PATH.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_lost_commit_reply_keeps_the_salt_and_the_retry_reuses_it(relay):
+    real_send = server._send
+
+    def drop_the_reply(*args):
+        raise httpx.ReadTimeout("reply lost")
+
+    server._send = drop_the_reply
+    try:
+        failed = server.union_join(COALITION, 62.0)
+    finally:
+        server._send = real_send
+    assert "error" in failed and failed["commitment"]
+    assert json.loads(server.SECRETS_PATH.read_text())[server._key(COALITION)]["pending"] is True
+
+    retried = server.union_join(COALITION, 62.0)
+    assert retried["status"] == "joined"
+    assert retried["agent_id"] == failed["agent_id"]  # the same member, not a second one
+    assert retried["commitment"] == failed["commitment"]
+
+
+def test_secrets_are_namespaced_by_relay(relay, monkeypatch):
+    first_relay = server.relay_url()
+    first = server.union_join(COALITION, 62.0)
+    monkeypatch.setenv("RELAY_URL", "http://127.0.0.1:1")  # same coalition id, another relay
+    assert server._secret(COALITION) is None
+    stored = json.loads(server.SECRETS_PATH.read_text())
+    assert list(stored) == [f"{first_relay}|{COALITION}"]
+    assert stored[f"{first_relay}|{COALITION}"]["agent_id"] == first["agent_id"]
 
 
 def test_status_reports_state_offer_and_me(relay):

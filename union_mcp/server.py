@@ -12,11 +12,13 @@ decision in union_respond is computed here in code, never by the model.
     RELAY_URL=http://localhost:8077 python -m union_mcp.server
     python -m union_mcp.server --print-config   # claude_desktop_config.json snippet
 """
+import fcntl
 import hashlib
 import json
 import os
 import secrets as secrets_mod
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +47,13 @@ def commitment_for(price_cents: int, salt_hex: str) -> str:
 
 
 # ---------------------------------------------------------------- local secrets
+# The salt is the only thing that can open a commitment, so a write must never
+# lose one: Claude Desktop and Cursor can run two adapters over the same file.
+
+def _key(coalition_id: str) -> str:
+    # The demo coalition id is fixed, so the same id on another relay is another member.
+    return f"{relay_url()}|{coalition_id}"
+
 
 def _read_secrets() -> dict[str, Any]:
     try:
@@ -53,16 +62,31 @@ def _read_secrets() -> dict[str, Any]:
         return {}
 
 
-def _write_secret(coalition_id: str, record: dict) -> None:
+@contextmanager
+def _locked():
+    """Hold an exclusive lock on the secrets file across one read-modify-write."""
     SECRETS_PATH.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    data = _read_secrets()
-    data[coalition_id] = record
-    SECRETS_PATH.write_text(json.dumps(data, indent=2))
-    SECRETS_PATH.chmod(0o600)
+    lock = SECRETS_PATH.with_suffix(".lock")
+    with open(lock, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def _write_secret(coalition_id: str, record: dict) -> None:
+    with _locked():
+        data = _read_secrets()
+        data[_key(coalition_id)] = record
+        tmp = SECRETS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2))
+        tmp.chmod(0o600)
+        os.replace(tmp, SECRETS_PATH)  # atomic: a reader sees whole JSON or none
 
 
 def _secret(coalition_id: str) -> dict | None:
-    return _read_secrets().get(coalition_id)
+    return _read_secrets().get(_key(coalition_id))
 
 
 # ------------------------------------------------------------------ relay calls
@@ -71,6 +95,7 @@ def _post(path: str, payload: dict) -> dict:
     response = httpx.post(f"{relay_url()}{path}", json=payload, timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.json()
+
 
 def _get(path: str, params: dict | None = None) -> Any:
     response = httpx.get(f"{relay_url()}{path}", params=params, timeout=TIMEOUT_SECONDS)
@@ -126,23 +151,39 @@ def union_join(coalition_id: str, max_monthly_price_usd: float) -> dict:
     if price_cents <= 0:
         return {"error": "max_monthly_price_usd must be greater than 0."}
 
-    existing = _secret(coalition_id)
-    if existing:
+    record = _secret(coalition_id)
+    if record and not record.get("pending"):
         return {"status": "already_joined", "coalition_id": coalition_id,
-                "agent_id": existing["agent_id"], "commitment": existing["commitment"],
+                "agent_id": record["agent_id"], "commitment": record["commitment"],
                 "note": "A sealed price is already stored for this coalition and cannot be changed."}
 
-    agent_id = f"mcp-{secrets_mod.token_hex(3)}"
-    salt_hex = secrets_mod.token_hex(32)
-    commitment = commitment_for(price_cents, salt_hex)
+    if record and record["price_cents"] != price_cents:
+        # The commitment may already be on the relay and cannot be changed (CONTRACT rule 4).
+        return {"error": "An unfinished join is stored for this coalition with a different limit. "
+                         "Retry union_join with the original maximum monthly price."}
+
+    if not record:
+        # Written before anything is sent: a commitment the relay keeps must stay openable,
+        # and a retry resends under the same identity instead of orphaning it.
+        salt_hex = secrets_mod.token_hex(32)
+        record = {"agent_id": f"mcp-{secrets_mod.token_hex(3)}", "price_cents": price_cents,
+                  "salt_hex": salt_hex, "commitment": commitment_for(price_cents, salt_hex),
+                  "pending": True}
+        _write_secret(coalition_id, record)
+
+    agent_id, commitment = record["agent_id"], record["commitment"]
     try:
         _send(coalition_id, agent_id, "JOIN", {"persona_inquiry_id": None, "client": CLIENT})
         _send(coalition_id, agent_id, "COMMIT", {"commitment": commitment})
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 409:  # 409: this member already committed, so we are done
+            return {**_error(exc), "agent_id": agent_id, "commitment": commitment,
+                    "note": "The sealed price is stored locally. Call union_join again to retry."}
     except Exception as exc:
-        return _error(exc)
+        return {**_error(exc), "agent_id": agent_id, "commitment": commitment,
+                "note": "The sealed price is stored locally. Call union_join again to retry."}
 
-    _write_secret(coalition_id, {"agent_id": agent_id, "price_cents": price_cents,
-                                 "salt_hex": salt_hex, "commitment": commitment})
+    _write_secret(coalition_id, {k: v for k, v in record.items() if k != "pending"})
     return {"status": "joined", "coalition_id": coalition_id, "agent_id": agent_id,
             "client": CLIENT, "commitment": commitment,
             "note": "The price stays on this machine. The relay only has the commitment hash."}
