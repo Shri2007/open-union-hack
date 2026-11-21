@@ -30,6 +30,10 @@
   <p class="lead">Open Union is an open protocol. Any MCP agent can join the coalition: Claude Code, Claude Desktop, Cursor.
     Your agent keeps your price limit sealed on your machine. The server only ever sees a hash until the deal closes.</p>
 
+  <p class="lead" id="no-relay" hidden><b>You're on the project website, not the live demo.</b> Replace YOUR-RELAY-URL with a running Open Union relay:
+    the link shown on the stage screen during a live demo, or your own (run <code>uvicorn app.main:app --port 8077</code> from the
+    <a href="https://github.com/Shri2007/open-union-hack">repo</a>). Want to see it working first? <a href="stage.html?replay=1">Watch the recorded demo</a>.</p>
+
   <section class="card card--white">
     <h2>1 · Claude Code (one line)</h2>
     <pre id="cmd-code">loading…</pre>
@@ -63,8 +67,12 @@ function fill(relay) {
   document.getElementById("cmd-json").textContent = JSON.stringify({ mcpServers: { "open-union": {
     command: "uvx", args: ["--from", REPO, "union-mcp"], env: { RELAY_URL: relay } } } }, null, 2);
 }
-fetch("/public-url").then((r) => r.json()).then((d) => fill(d.url || location.origin))
-  .catch(() => fill(location.origin));
+// On the live relay, /public-url gives the address phones and agents use. On the static website
+// (GitHub Pages) there's no relay, so show a placeholder and explain where to get one.
+const PLACEHOLDER = "https://YOUR-RELAY-URL";
+fetch("/public-url").then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+  .then((d) => { if (!d.url) throw new Error(); fill(d.url); })
+  .catch(() => { fill(PLACEHOLDER); document.getElementById("no-relay").hidden = false; });
 for (const b of document.querySelectorAll("button[data-copy]")) {
   b.addEventListener("click", async () => {
     const id = b.dataset.copy, text = document.getElementById(id).textContent;

@@ -138,6 +138,9 @@
     border: 0; border-radius: 999px; padding: 18px 44px; cursor: pointer; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
   .replay-btn:focus-visible { outline: 4px solid var(--amber); outline-offset: 4px; }
   .replay-note { max-width: 640px; margin: 14px auto 0; font-size: 18px; }
+  .replay-link { display: inline-block; margin-top: 18px; font-size: 20px; font-weight: 800; color: var(--white);
+    border: 2px solid rgba(255,255,255,.6); border-radius: 999px; padding: 10px 22px; text-decoration: none; }
+  .replay-link:hover, .replay-link:focus-visible { background: var(--white); color: var(--mid); }
   @media (max-height: 1040px) and (min-width: 1101px) { body { zoom: .95; } }
   @media (max-height: 1000px) and (min-width: 1101px) { body { zoom: .92; } }
   @media (max-height: 960px) and (min-width: 1101px) { body { zoom: .88; } }
@@ -201,6 +204,7 @@
     <button type="button" id="replay-play" class="replay-btn">▶ Play the demo</button>
     <div class="small" id="replay-when"></div>
     <div class="small replay-note">Every offer, chat line and count comes from the real relay. The vendor and the Firedrill members are simulated. Sound on: the vendor talks.</div>
+    <a class="replay-link" href="agents.html">🤖 Bring your own agent: join with Claude, Cursor or any MCP agent →</a>
   </div>
 </div>
 
