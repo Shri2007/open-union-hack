@@ -444,9 +444,9 @@ function showOffer() {
   const price = dollars(lastOffer.price_cents);
   const above = lastOffer.price_cents > member.price_cents;
   if (!above) {
-    setRoom("accept", "Your agent:", "ACCEPT " + price);
+    setRoom("accept", "Your agent:", "ACCEPT " + price, "Your private limit: " + dollars(member.price_cents) + ". Only this phone knows it.");
   } else {
-    setRoom("decline", "Your agent:", "NO, " + price, "is above your limit");
+    setRoom("decline", "Your agent:", "NO, " + price, "Above your private limit of " + dollars(member.price_cents) + ". Only this phone knows it.");
   }
   // While the price is above your limit, you can vote for the coalition to walk out.
   $("strike-vote").hidden = !above;
