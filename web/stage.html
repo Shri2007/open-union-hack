@@ -251,7 +251,7 @@
   <h3>Presenter <span class="tag">hotkeys</span></h3>
   <ol id="beats"></ol>
   <div class="reset"><b>W</b> walkout (phones strike)</div>
-  <div class="reset"><b>V</b> vendor voice on/off</div>
+  <div class="reset"><b>V</b> vendor voice on/off (off = fast mode)</div>
   <div class="reset"><b>H</b> hide this panel (keys still work) · <b>Q</b> hide QR</div>
   <div class="reset" id="p-reset"><b>R</b> reset (keeps real members)</div>
   <div class="status" id="p-status"></div>
@@ -559,7 +559,8 @@ function vendorSay(text) {
   const box = $("bubble-text");
   let i = 0;
   clearInterval(vendorSay.typer);
-  vendorSay.typer = setInterval(() => { box.textContent = text.slice(0, ++i); if (i >= text.length) clearInterval(vendorSay.typer); }, 28);
+  if (!vendor.voice) { box.textContent = text; }  // fast mode: show the whole line at once
+  else vendorSay.typer = setInterval(() => { box.textContent = text.slice(0, ++i); if (i >= text.length) clearInterval(vendorSay.typer); }, 28);
   vendor.talking = true;
   clearTimeout(vendorSay.stop);
   const fallbackMs = Math.min(9000, 400 + text.length * 60);
@@ -1006,7 +1007,9 @@ function onPresenterKey(ev) {
   } else if (ev.key === "v" || ev.key === "V") {
     vendor.voice = !vendor.voice;
     if (!vendor.voice && window.speechSynthesis) speechSynthesis.cancel();
-    state.presenter.status = "vendor voice " + (vendor.voice ? "on" : "off");
+    // Voice off = fast mode: the server skips model calls for lines and shortens its pauses.
+    post("/demo/fast?on=" + (vendor.voice ? 0 : 1));
+    state.presenter.status = vendor.voice ? "vendor voice on" : "vendor voice off · fast mode";
     renderPresenter();
   } else if (ev.key === "r" || ev.key === "R") {
     ev.preventDefault();

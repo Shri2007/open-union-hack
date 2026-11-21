@@ -45,8 +45,14 @@ TRAP_TERMS = ("$58/month for the first 3 months (introductory rate), then $95/mo
 CLEAN_TERMS = "$58/month per line, fixed for 12 months. No added fees. Activation waived."
 
 # ---------- pieces built by others, with fallbacks ----------
+_fast = False  # fast mode (voice off on the stage): no model calls for lines, shorter pauses
+
+
 try:
-    from app.vendor import price_for, say
+    from app.vendor import price_for, say as _model_say
+
+    def say(who: str, situation: str, fallback: str) -> str:
+        return fallback if _fast else _model_say(who, situation, fallback)
 except ImportError:
     def price_for(n: int) -> int:
         return round(100 * max(38.0, 85 - 27.1 * math.log(1 + n / 200)))
@@ -225,7 +231,7 @@ def beat5(cid: str) -> None:
         return
     chat(cid, "coalition", f"Rejected. {d} that becomes $95 after 3 months, plus fees, is not {d}. "
                            f"We need {d} fixed for 12 months, no added fees.")
-    time.sleep(TRAP_PAUSE_SECONDS)  # keep the rejected trap check on screen long enough for the room to read it
+    time.sleep(2.5 if _fast else TRAP_PAUSE_SECONDS)  # keep the rejected trap check on screen long enough to read
     chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. Grudgingly agree to {d} a month per line, "
                                       "fixed for 12 months, no added fees.",
                             f"Fine. {d} a month, fixed for 12 months, no added fees."))
@@ -242,7 +248,7 @@ def beat6(cid: str) -> None:
         _script("scripts/seed_members.py", "reveal", "--relay", RELAY_URL, "--coalition", cid)
     # Wait for reveals (simulated and real phones) to settle, at most 25 seconds.
     last, stable, start = -1, 0, time.time()
-    while time.time() - start < 25 and stable < 3:
+    while time.time() - start < (12 if _fast else 25) and stable < (2 if _fast else 3):
         time.sleep(1.5)
         now = s.count_type(cid, "REVEAL")
         stable = stable + 1 if now == last and now > 0 else 0
@@ -271,7 +277,7 @@ def walkout(cid: str) -> None:
     chat(cid, "coalition", f"{n} verified members are taking their lines to a competitor. Strike.")
     bus.publish(cid, "strike", {"text": f"{n} members walked out on Northline Mobile", "members": n})
     record_system(cid, "walkout", members=n)
-    time.sleep(STRIKE_SECONDS)  # let the room's phones sit on the strike screen
+    time.sleep(2 if _fast else STRIKE_SECONDS)  # let the room's phones sit on the strike screen
     _concessions[cid] = WALKOUT_DISCOUNT_CENTS
     price = quote(cid, n)
     chat(cid, "vendor", say("vendor", f"You sell monthly phone plans. {n} customers just walked out to a competitor. "
@@ -357,6 +363,14 @@ def vote_strike(body: VoteIn):
         votes.clear()
         _queue_for(body.coalition_id).put(7)
     return {"votes": len(votes) if not fired else needed, "needed": needed, "fired": fired}
+
+
+@router.post("/demo/fast")
+def set_fast(on: int = 1):
+    """Fast mode for a tight demo slot: written lines instead of model calls, and shorter pauses."""
+    global _fast
+    _fast = bool(on)
+    return {"fast": _fast}
 
 
 @router.post("/demo/reset")
